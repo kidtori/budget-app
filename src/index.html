@@ -48,6 +48,111 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+#auth-gate {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background:
+    linear-gradient(180deg, rgba(240,242,245,.94), rgba(240,242,245,.98)),
+    #f0f2f5;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+#auth-gate.active { display: flex; }
+
+.auth-panel {
+  width: min(420px, 100%);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-md);
+  padding: 24px;
+}
+
+.auth-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--accent);
+  font-size: 18px;
+  font-weight: 700;
+  margin-bottom: 18px;
+}
+
+.auth-title {
+  font-size: 24px;
+  font-weight: 750;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.auth-copy {
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.55;
+  margin-bottom: 18px;
+}
+
+.auth-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.auth-field label {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-3);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.auth-field input {
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 11px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  outline: none;
+}
+
+.auth-field input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(79,110,247,.12);
+}
+
+.auth-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.auth-note {
+  margin-top: 14px;
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.auth-error {
+  display: none;
+  margin-top: 12px;
+  padding: 9px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--red-bg);
+  color: var(--red);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.auth-error.active { display: block; }
+
 #shell { display: flex; height: 100vh; }
 
 /* ── Sidebar ── */
@@ -1228,6 +1333,31 @@ body {
   </style>
 </head>
 <body>
+  <div id="auth-gate">
+    <div class="auth-panel">
+      <div class="auth-brand">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+        Budget
+      </div>
+      <div class="auth-title">Sign in to open your budget</div>
+      <div class="auth-copy">
+        This app loads your data from a private Google Drive app-data file. Without Google sign-in, the dashboard stays locked.
+      </div>
+      <div class="auth-field">
+        <label for="auth-google-client-id">Google OAuth Client ID</label>
+        <input id="auth-google-client-id" type="text" placeholder="1234567890-abc.apps.googleusercontent.com" autocomplete="off" />
+      </div>
+      <div class="auth-actions">
+        <button id="btn-auth-google" class="btn-primary" type="button">Sign in with Google</button>
+        <button id="btn-auth-local" class="btn-secondary" type="button">Use local app</button>
+      </div>
+      <div id="auth-error" class="auth-error"></div>
+      <div class="auth-note">
+        Keep the Google OAuth app in testing mode with only your account as a test user if you want only your Google account to pass sign-in.
+      </div>
+    </div>
+  </div>
+
   <div id="shell">
 
     <!-- ── Sidebar ── -->
@@ -1267,6 +1397,7 @@ body {
         </div>
         <div id="topbar-right">
           <span id="sync-status-badge" class="sync-badge">Local only</span>
+          <button id="btn-lock-app" class="btn-secondary" type="button" style="display:none">Lock</button>
           <button id="btn-add-bank" class="btn-primary">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Add bank

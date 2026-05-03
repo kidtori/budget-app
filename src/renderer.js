@@ -30,11 +30,28 @@ const collapsed = new Set();
 let _editingExpenseId = null;
 let expenseTab = 'upcoming';
 let wishSort = { col: 'name', dir: 'asc' };
+let appStarted = false;
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 async function init() {
   window.dataStore?.onStatus(renderSyncStatus);
+  setupAuthGate();
 
+  if (shouldShowAuthGate()) {
+    showAuthGate();
+    return;
+  }
+
+  await startApp();
+}
+
+function shouldShowAuthGate() {
+  if (window.api) return false;
+  return sessionStorage.getItem('budget.auth.unlocked') !== 'true';
+}
+
+async function startApp(options = {}) {
+  if (appStarted && !options.reloadData) return;
   const loaded = await window.dataStore?.load();
   if (loaded) data = loaded;
 
@@ -43,6 +60,71 @@ async function init() {
 
   render();
   navigateTo('budget');
+  hideAuthGate();
+  appStarted = true;
+  document.getElementById('btn-lock-app').style.display = window.api ? 'none' : '';
+}
+
+function setupAuthGate() {
+  const info = window.dataStore?.getInfo?.();
+  const input = document.getElementById('auth-google-client-id');
+  const localBtn = document.getElementById('btn-auth-local');
+  if (input && info?.clientId) input.value = info.clientId;
+  if (localBtn && !['localhost', '127.0.0.1', ''].includes(location.hostname)) {
+    localBtn.style.display = 'none';
+  }
+
+  document.getElementById('btn-auth-google')?.addEventListener('click', unlockWithGoogle);
+  document.getElementById('btn-auth-local')?.addEventListener('click', async () => {
+    sessionStorage.setItem('budget.auth.unlocked', 'true');
+    await startApp();
+  });
+  document.getElementById('btn-lock-app')?.addEventListener('click', () => {
+    sessionStorage.removeItem('budget.auth.unlocked');
+    location.reload();
+  });
+}
+
+function showAuthGate(message = '') {
+  const gate = document.getElementById('auth-gate');
+  const err = document.getElementById('auth-error');
+  gate.classList.add('active');
+  document.getElementById('shell').setAttribute('aria-hidden', 'true');
+  if (err) {
+    err.textContent = message;
+    err.classList.toggle('active', Boolean(message));
+  }
+}
+
+function hideAuthGate() {
+  document.getElementById('auth-gate').classList.remove('active');
+  document.getElementById('shell').removeAttribute('aria-hidden');
+}
+
+async function unlockWithGoogle() {
+  const input = document.getElementById('auth-google-client-id');
+  const clientId = input.value.trim();
+  if (!clientId) {
+    showAuthGate('Paste your Google OAuth Client ID first.');
+    return;
+  }
+
+  const btn = document.getElementById('btn-auth-google');
+  btn.disabled = true;
+  btn.textContent = 'Signing in...';
+
+  try {
+    window.dataStore.configureGoogle(clientId);
+    const result = await window.dataStore.connectGoogle(data);
+    if (result?.data) data = result.data;
+    sessionStorage.setItem('budget.auth.unlocked', 'true');
+    await startApp({ reloadData: false });
+  } catch (err) {
+    showAuthGate(err.message || 'Could not sign in with Google.');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sign in with Google';
+  }
 }
 
 function applyDataDefaults() {
