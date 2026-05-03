@@ -1,6 +1,11 @@
 node_modules/
 dist/
 .claude/
+!dist/android/
+!dist/android/.gitkeep
+android/**/build/
+android/.gradle/
+android/local.properties
 *.log
 budget-data.json
 budget-data.backup.json

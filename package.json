@@ -7,10 +7,18 @@
   "scripts": {
     "start": "electron .",
     "web": "node server.js",
+    "android:add": "cap add android",
+    "android:sync": "cap sync android",
+    "android:open": "cap open android",
+    "android:apk": "cd android && gradlew assembleDebug",
+    "android:copy-apk": "powershell -ExecutionPolicy Bypass -File scripts/copy-apk.ps1",
     "build": "electron-builder --win",
     "build:dir": "electron-builder --win --dir"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.3.1",
+    "@capacitor/cli": "^8.3.1",
+    "@capacitor/core": "^8.3.1",
     "electron": "^28.0.0",
     "electron-builder": "^24.0.0"
   },
@@ -33,7 +41,9 @@
       "target": [
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "requestedExecutionLevel": "asInvoker",

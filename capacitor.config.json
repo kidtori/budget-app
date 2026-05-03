@@ -1,0 +1,8 @@
+{
+  "appId": "com.kidtori.budget",
+  "appName": "Budget",
+  "webDir": "src",
+  "server": {
+    "androidScheme": "https"
+  }
+}
