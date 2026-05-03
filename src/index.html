@@ -1547,7 +1547,7 @@ body {
             <div class="settings-row">
               <div class="settings-row-info">
                 <span class="settings-row-label">Sync mode</span>
-                <span class="settings-row-desc">Use Google Drive app data for private cloud sync.</span>
+                <span class="settings-row-desc">Use a private app folder in OneDrive or Google Drive for cloud sync.</span>
               </div>
               <div>
                 <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap">
@@ -1559,8 +1559,29 @@ body {
             </div>
             <div class="settings-row">
               <div class="settings-row-info">
+                <span class="settings-row-label">Microsoft Client ID</span>
+                <span class="settings-row-desc">Create a Microsoft Entra single-page app and add this app's URL as a redirect URI.</span>
+              </div>
+              <div class="sync-client-row">
+                <input type="text" id="onedrive-client-id" class="settings-sel sync-client-input" placeholder="00000000-0000-0000-0000-000000000000" autocomplete="off" />
+                <button id="btn-onedrive-save-client" class="btn-secondary" type="button">Save ID</button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info">
+                <span class="settings-row-label">OneDrive</span>
+                <span class="settings-row-desc">The synced budget file is saved in OneDrive's app folder with Files.ReadWrite.AppFolder access.</span>
+              </div>
+              <div class="sync-actions">
+                <button id="btn-onedrive-connect" class="btn-primary" type="button">Connect OneDrive</button>
+                <button id="btn-onedrive-pull" class="btn-secondary" type="button">Load remote</button>
+                <button id="btn-onedrive-sync" class="btn-secondary" type="button">Sync now</button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-info">
                 <span class="settings-row-label">Google OAuth Client ID</span>
-                <span class="settings-row-desc">Create a Web client in Google Cloud and add this app's origin as an authorized JavaScript origin.</span>
+                <span class="settings-row-desc">Optional fallback. Create a Web client in Google Cloud and add this app's origin as an authorized JavaScript origin.</span>
               </div>
               <div class="sync-client-row">
                 <input type="text" id="google-client-id" class="settings-sel sync-client-input" placeholder="1234567890-abc.apps.googleusercontent.com" autocomplete="off" />

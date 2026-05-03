@@ -71,10 +71,13 @@ function renderSyncStatus(info = window.dataStore?.getInfo?.()) {
   ].filter(Boolean);
   const detail = document.getElementById('sync-status-detail');
   const clientInput = document.getElementById('google-client-id');
+  const oneDriveClientInput = document.getElementById('onedrive-client-id');
   const modeText = document.getElementById('sync-mode-label');
   const connectBtn = document.getElementById('btn-google-connect');
   const pullBtn = document.getElementById('btn-google-pull');
   const disconnectBtn = document.getElementById('btn-google-disconnect');
+  const oneDriveConnectBtn = document.getElementById('btn-onedrive-connect');
+  const oneDrivePullBtn = document.getElementById('btn-onedrive-pull');
 
   for (const badge of badges) {
     badge.textContent = info.status || 'Local only';
@@ -85,12 +88,20 @@ function renderSyncStatus(info = window.dataStore?.getInfo?.()) {
       badge.classList.add('sync-warn');
     }
   }
-  if (detail) detail.textContent = info.detail || (info.mode === 'google' ? 'Google Drive appDataFolder' : 'This device only');
+  const modeDetail = info.mode === 'google'
+    ? 'Google Drive appDataFolder'
+    : info.mode === 'onedrive'
+      ? 'OneDrive app folder'
+      : 'This device only';
+  if (detail) detail.textContent = info.detail || modeDetail;
   if (clientInput && document.activeElement !== clientInput) clientInput.value = info.clientId || '';
-  if (modeText) modeText.textContent = info.mode === 'google' ? 'Google Drive' : 'Local';
+  if (oneDriveClientInput && document.activeElement !== oneDriveClientInput) oneDriveClientInput.value = info.oneDriveClientId || '';
+  if (modeText) modeText.textContent = info.mode === 'google' ? 'Google Drive' : info.mode === 'onedrive' ? 'OneDrive' : 'Local';
   if (connectBtn) connectBtn.textContent = info.signedIn ? 'Reconnect Google' : 'Connect Google';
   if (pullBtn) pullBtn.disabled = !info.clientId;
-  if (disconnectBtn) disconnectBtn.disabled = info.mode !== 'google';
+  if (oneDriveConnectBtn) oneDriveConnectBtn.textContent = info.signedIn && info.mode === 'onedrive' ? 'Reconnect OneDrive' : 'Connect OneDrive';
+  if (oneDrivePullBtn) oneDrivePullBtn.disabled = !info.oneDriveClientId;
+  if (disconnectBtn) disconnectBtn.disabled = info.mode === 'local';
 }
 
 // ── Utils ──────────────────────────────────────────────────────────────────
@@ -1317,6 +1328,59 @@ document.getElementById('btn-google-sync')?.addEventListener('click', async () =
 document.getElementById('btn-google-disconnect')?.addEventListener('click', () => {
   window.dataStore?.disconnectGoogle();
   renderSyncStatus();
+});
+
+// OneDrive sync settings
+document.getElementById('btn-onedrive-save-client')?.addEventListener('click', () => {
+  const input = document.getElementById('onedrive-client-id');
+  window.dataStore?.configureOneDrive(input.value);
+  renderSyncStatus();
+});
+
+document.getElementById('btn-onedrive-connect')?.addEventListener('click', async () => {
+  try {
+    const result = await window.dataStore.connectOneDrive(data);
+    if (result?.foundRemote) {
+      const useRemote = confirm('OneDrive already has budget data. Load that copy now? Choose Cancel to keep this device copy and upload it instead.');
+      if (useRemote) {
+        data = result.data;
+        applyDataDefaults();
+        render();
+        navigateTo('budget');
+      } else {
+        await window.dataStore.save(data, { force: true });
+      }
+    } else {
+      await window.dataStore.save(data, { force: true });
+    }
+    initSettingsPage();
+  } catch (err) {
+    alert(err.message || 'Could not connect to OneDrive.');
+    renderSyncStatus({ status: 'OneDrive sync failed', detail: err.message || '' });
+  }
+});
+
+document.getElementById('btn-onedrive-pull')?.addEventListener('click', async () => {
+  try {
+    const result = await window.dataStore.pullOneDrive();
+    if (!result?.data) return;
+    if (!confirm('Replace this device copy with the latest OneDrive data?')) return;
+    data = result.data;
+    applyDataDefaults();
+    render();
+    navigateTo('budget');
+  } catch (err) {
+    alert(err.message || 'Could not load OneDrive data.');
+  }
+});
+
+document.getElementById('btn-onedrive-sync')?.addEventListener('click', async () => {
+  try {
+    await window.dataStore.save(data, { force: true });
+    initSettingsPage();
+  } catch (err) {
+    alert(err.message || 'Could not sync to OneDrive.');
+  }
 });
 
 // ── Wishlist ────────────────────────────────────────────────────────────────

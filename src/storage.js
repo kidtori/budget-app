@@ -1,7 +1,9 @@
 (function () {
   const FILE_NAME = 'budget-data.v1.json';
-  const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
-  const CLIENT_ID_KEY = 'budget.google.clientId';
+  const GOOGLE_DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
+  const GOOGLE_CLIENT_ID_KEY = 'budget.google.clientId';
+  const ONEDRIVE_SCOPE = 'Files.ReadWrite.AppFolder';
+  const ONEDRIVE_CLIENT_ID_KEY = 'budget.onedrive.clientId';
   const MODE_KEY = 'budget.storage.mode';
   const FILE_ID_KEY = 'budget.google.fileId';
   const DB_NAME = 'budget-app-cache';
@@ -9,10 +11,15 @@
 
   const state = {
     mode: localStorage.getItem(MODE_KEY) || 'local',
-    clientId: localStorage.getItem(CLIENT_ID_KEY) || '',
+    clientId: localStorage.getItem(GOOGLE_CLIENT_ID_KEY) || '',
+    oneDriveClientId: localStorage.getItem(ONEDRIVE_CLIENT_ID_KEY) || '',
     fileId: localStorage.getItem(FILE_ID_KEY) || '',
     accessToken: '',
+    oneDriveAccessToken: '',
     tokenClient: null,
+    msalApp: null,
+    oneDriveItemId: '',
+    oneDriveETag: '',
     remoteModifiedTime: '',
     syncStatus: 'Local only',
     syncDetail: ''
@@ -31,8 +38,10 @@
     return {
       mode: state.mode,
       clientId: state.clientId,
-      signedIn: Boolean(state.accessToken),
+      oneDriveClientId: state.oneDriveClientId,
+      signedIn: Boolean(state.accessToken || state.oneDriveAccessToken),
       fileId: state.fileId,
+      oneDriveItemId: state.oneDriveItemId,
       status: state.syncStatus,
       detail: state.syncDetail,
       remoteModifiedTime: state.remoteModifiedTime
@@ -119,7 +128,7 @@
     return new Promise((resolve, reject) => {
       state.tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: state.clientId,
-        scope: DRIVE_SCOPE,
+        scope: GOOGLE_DRIVE_SCOPE,
         callback: response => {
           if (response.error) {
             reject(new Error(response.error_description || response.error));
@@ -248,21 +257,165 @@
     return file;
   }
 
+  function loadMsal() {
+    if (window.msal?.PublicClientApplication) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[data-msal-browser]');
+      if (existing) {
+        existing.addEventListener('load', () => resolve(), { once: true });
+        existing.addEventListener('error', reject, { once: true });
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = 'https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js';
+      script.async = true;
+      script.defer = true;
+      script.dataset.msalBrowser = 'true';
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error('Microsoft sign-in library could not be loaded.'));
+      document.head.appendChild(script);
+    });
+  }
+
+  async function getMsalApp() {
+    if (!state.oneDriveClientId) throw new Error('Add a Microsoft Entra Application Client ID first.');
+    await loadMsal();
+    if (!state.msalApp) {
+      state.msalApp = new msal.PublicClientApplication({
+        auth: {
+          clientId: state.oneDriveClientId,
+          authority: 'https://login.microsoftonline.com/consumers',
+          redirectUri: window.location.href.split('#')[0]
+        },
+        cache: {
+          cacheLocation: 'localStorage',
+          storeAuthStateInCookie: false
+        }
+      });
+    }
+    return state.msalApp;
+  }
+
+  async function requestOneDriveToken(interactive = true) {
+    const app = await getMsalApp();
+    const scopes = [ONEDRIVE_SCOPE];
+    const accounts = app.getAllAccounts();
+    const account = accounts[0] || null;
+
+    if (account) {
+      try {
+        const result = await app.acquireTokenSilent({ scopes, account });
+        state.oneDriveAccessToken = result.accessToken;
+        return result.accessToken;
+      } catch (err) {
+        if (!interactive) throw err;
+      }
+    }
+
+    if (!interactive) throw new Error('Sign in to OneDrive first.');
+    const result = await app.loginPopup({ scopes, prompt: 'select_account' });
+    state.oneDriveAccessToken = result.accessToken;
+    return result.accessToken;
+  }
+
+  async function graphFetch(url, options = {}) {
+    if (!state.oneDriveAccessToken) await requestOneDriveToken(true);
+    const res = await fetch(url, {
+      ...options,
+      headers: {
+        Authorization: `Bearer ${state.oneDriveAccessToken}`,
+        ...(options.headers || {})
+      }
+    });
+
+    if (res.status === 401) {
+      state.oneDriveAccessToken = '';
+      await requestOneDriveToken(true);
+      return graphFetch(url, options);
+    }
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      const err = new Error(`OneDrive request failed (${res.status}): ${text || res.statusText}`);
+      err.status = res.status;
+      throw err;
+    }
+    return res;
+  }
+
+  async function getOneDriveMetadata() {
+    try {
+      const res = await graphFetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:/${FILE_NAME}`);
+      const item = await res.json();
+      state.oneDriveItemId = item.id || '';
+      state.oneDriveETag = item.eTag || item.cTag || '';
+      state.remoteModifiedTime = item.lastModifiedDateTime || '';
+      return item;
+    } catch (err) {
+      if (err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  async function downloadOneDriveFile() {
+    const meta = await getOneDriveMetadata();
+    if (!meta) return null;
+    const res = await graphFetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:/${FILE_NAME}:/content`);
+    const data = await res.json();
+    await saveCache(data, {
+      source: 'onedrive',
+      itemId: state.oneDriveItemId,
+      eTag: state.oneDriveETag,
+      modifiedTime: state.remoteModifiedTime
+    });
+    return { data, meta };
+  }
+
+  async function uploadOneDriveFile(data, options = {}) {
+    if (!options.force && state.oneDriveETag) {
+      const remote = await getOneDriveMetadata();
+      const remoteTag = remote?.eTag || remote?.cTag || '';
+      if (remoteTag && remoteTag !== state.oneDriveETag) {
+        await saveCache(data, { source: 'local-conflict', conflictedAt: new Date().toISOString() });
+        emitStatus('Sync conflict', 'OneDrive changed on another device. Load remote or force upload from Settings.');
+        throw new Error('OneDrive has a newer copy.');
+      }
+    }
+
+    const res = await graphFetch(`https://graph.microsoft.com/v1.0/me/drive/special/approot:/${FILE_NAME}:/content`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json; charset=UTF-8' },
+      body: JSON.stringify(data, null, 2)
+    });
+    const item = await res.json();
+    state.oneDriveItemId = item.id || '';
+    state.oneDriveETag = item.eTag || item.cTag || '';
+    state.remoteModifiedTime = item.lastModifiedDateTime || '';
+    await saveCache(data, {
+      source: 'onedrive',
+      itemId: state.oneDriveItemId,
+      eTag: state.oneDriveETag,
+      modifiedTime: state.remoteModifiedTime
+    });
+    return item;
+  }
+
   async function load() {
     if (window.api) {
       const data = await window.api.loadData();
       if (data) await saveCache(data, { source: 'electron' });
-      emitStatus(state.mode === 'google' ? 'Cached desktop data loaded' : 'Local desktop data');
+      emitStatus(state.mode === 'local' ? 'Local desktop data' : 'Cached desktop data loaded');
       return data;
     }
 
     const cached = await loadCache();
     if (cached?.data) {
-      emitStatus(state.mode === 'google' ? 'Offline cache loaded' : 'Browser cache loaded');
+      emitStatus(state.mode === 'local' ? 'Browser cache loaded' : 'Offline cache loaded');
       return cached.data;
     }
 
-    emitStatus(state.mode === 'google' ? 'Sign in to sync' : 'No local data yet');
+    emitStatus(state.mode === 'local' ? 'No local data yet' : 'Sign in to sync');
     return null;
   }
 
@@ -271,28 +424,43 @@
 
     if (window.api) {
       const ok = await window.api.saveData(data);
-      emitStatus(state.mode === 'google' ? 'Saved locally; sync from web app' : 'Saved locally');
+      emitStatus(state.mode === 'local' ? 'Saved locally' : 'Saved locally; sync from web app');
       return ok;
     }
 
-    if (state.mode !== 'google') {
+    if (state.mode === 'local') {
       emitStatus('Saved to browser cache');
       return true;
     }
 
-    if (!state.clientId) {
+    if (state.mode === 'google' && !state.clientId) {
       emitStatus('Google sync not configured', 'Add a Client ID in Settings.');
       return false;
     }
 
-    if (!state.accessToken) {
+    if (state.mode === 'onedrive' && !state.oneDriveClientId) {
+      emitStatus('OneDrive sync not configured', 'Add a Microsoft Client ID in Settings.');
+      return false;
+    }
+
+    if (state.mode === 'google' && !state.accessToken) {
       emitStatus('Saved offline', 'Sign in to upload changes to Google Drive.');
       return false;
     }
 
+    if (state.mode === 'onedrive' && !state.oneDriveAccessToken) {
+      emitStatus('Saved offline', 'Sign in to upload changes to OneDrive.');
+      return false;
+    }
+
     emitStatus('Syncing...');
-    await uploadDriveFile(data, options);
-    emitStatus('Synced to Google Drive', new Date().toLocaleTimeString());
+    if (state.mode === 'google') {
+      await uploadDriveFile(data, options);
+      emitStatus('Synced to Google Drive', new Date().toLocaleTimeString());
+    } else if (state.mode === 'onedrive') {
+      await uploadOneDriveFile(data, options);
+      emitStatus('Synced to OneDrive', new Date().toLocaleTimeString());
+    }
     return true;
   }
 
@@ -328,16 +496,53 @@
     return remote;
   }
 
+  async function connectOneDrive(currentData) {
+    state.mode = 'onedrive';
+    localStorage.setItem(MODE_KEY, 'onedrive');
+    emitStatus('Opening Microsoft sign-in...');
+    await requestOneDriveToken(true);
+    emitStatus('Connected to OneDrive');
+
+    const remote = await downloadOneDriveFile();
+    if (remote) {
+      emitStatus('Loaded from OneDrive', remote.meta?.lastModifiedDateTime || '');
+      return { ...remote, foundRemote: true };
+    }
+
+    emitStatus('Creating OneDrive data file...');
+    const created = await uploadOneDriveFile(currentData, { force: true });
+    emitStatus('OneDrive sync ready');
+    return { data: currentData, meta: created, foundRemote: false };
+  }
+
+  async function pullOneDrive() {
+    await requestOneDriveToken(true);
+    emitStatus('Loading OneDrive data...');
+    const remote = await downloadOneDriveFile();
+    if (remote) emitStatus('Loaded from OneDrive', remote.meta?.lastModifiedDateTime || '');
+    else emitStatus('No OneDrive data file yet');
+    return remote;
+  }
+
   function configureGoogle(clientId) {
     state.clientId = String(clientId || '').trim();
-    if (state.clientId) localStorage.setItem(CLIENT_ID_KEY, state.clientId);
-    else localStorage.removeItem(CLIENT_ID_KEY);
+    if (state.clientId) localStorage.setItem(GOOGLE_CLIENT_ID_KEY, state.clientId);
+    else localStorage.removeItem(GOOGLE_CLIENT_ID_KEY);
     emitStatus(state.clientId ? 'Google Client ID saved' : 'Google Client ID removed');
+  }
+
+  function configureOneDrive(clientId) {
+    state.oneDriveClientId = String(clientId || '').trim();
+    state.msalApp = null;
+    if (state.oneDriveClientId) localStorage.setItem(ONEDRIVE_CLIENT_ID_KEY, state.oneDriveClientId);
+    else localStorage.removeItem(ONEDRIVE_CLIENT_ID_KEY);
+    emitStatus(state.oneDriveClientId ? 'Microsoft Client ID saved' : 'Microsoft Client ID removed');
   }
 
   function disconnectGoogle() {
     state.mode = 'local';
     state.accessToken = '';
+    state.oneDriveAccessToken = '';
     localStorage.setItem(MODE_KEY, 'local');
     emitStatus('Local only');
   }
@@ -345,6 +550,7 @@
   async function getDataLocation() {
     if (window.api) return window.api.getDataPath();
     if (state.mode === 'google') return state.fileId ? `Google Drive appDataFolder / ${FILE_NAME}` : 'Google Drive appDataFolder';
+    if (state.mode === 'onedrive') return state.oneDriveItemId ? `OneDrive Apps/Budget / ${FILE_NAME}` : 'OneDrive Apps/Budget';
     return 'Browser IndexedDB cache';
   }
 
@@ -360,6 +566,9 @@
     connectGoogle,
     pullGoogle,
     configureGoogle,
+    connectOneDrive,
+    pullOneDrive,
+    configureOneDrive,
     disconnectGoogle,
     getDataLocation,
     getInfo,
