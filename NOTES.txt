@@ -1,0 +1,276 @@
+================================================================================
+  BUDGET APP — v1.0 NOTES
+================================================================================
+
+WHAT IT IS
+----------
+A personal Windows desktop budget app built with Electron. Fully portable —
+the exe and its data file sit in the same folder, so the whole thing can be
+copied to any machine and it just works. No installation, no cloud sync needed.
+
+Built for a specific personal workflow:
+  - Track bank accounts and their balances manually
+  - Log fixed/recurring expenses to know what's committed each month
+  - Set a discretionary spending budget (separate account, e.g. Revolut)
+    and visualise whether you're on pace mid-period
+  - Keep a wishlist of things to buy with affordability checks against
+    live account balances
+
+
+--------------------------------------------------------------------------------
+TECH STACK
+--------------------------------------------------------------------------------
+
+  Runtime        Electron 28 (Chromium + Node.js)
+  Frontend       Vanilla JS + HTML/CSS (no frameworks, no bundler)
+  IPC            contextBridge + ipcRenderer.invoke / ipcMain.handle
+  Persistence    Atomic JSON writes (write to .tmp, rename over live file)
+                 Backup copy kept alongside: budget-data.json.backup
+  Build          electron-builder, portable target (single .exe, no installer)
+
+  Key security settings:
+    contextIsolation: true
+    nodeIntegration: false
+    sandbox: false
+
+  NOTE ON BUILDING:
+    The dist\ folder lives inside OneDrive, which causes Windows Defender /
+    OneDrive to lock output files mid-build. The workaround is to build to
+    a temp path first, then copy:
+
+      set CSC_IDENTITY_AUTO_DISCOVERY=false
+      npx electron-builder --win portable --config.directories.output="C:\Users\anaal\AppData\Local\Temp\budget-build"
+      copy the .exe back to dist\
+
+    Or just make sure Budget.exe is not running before building to dist directly.
+
+
+--------------------------------------------------------------------------------
+FILE STRUCTURE
+--------------------------------------------------------------------------------
+
+  main.js           Electron main process. Creates window, handles IPC,
+                    manages file load/save/backup, opens external URLs.
+
+  preload.js        Exposes a minimal API to the renderer via contextBridge:
+                      api.loadData()     — load JSON from disk
+                      api.saveData(data) — atomic save to disk
+                      api.getDataPath()  — returns path to data file (for UI)
+                      api.openUrl(url)   — opens URL in default browser
+
+  src/index.html    Entire UI. All CSS is inlined in a <style> tag at the top.
+                    No external stylesheets. Structure:
+                      #shell > #sidebar + #main > #topbar + #content
+                    Content has one div per page, toggled with display flex/none.
+
+  src/renderer.js   All frontend logic. No imports, runs in the browser context.
+                    Organised into sections:
+                      State / constants
+                      Bootstrap (init, save)
+                      Utils (formatting, date helpers)
+                      Accounts page (render, inline edits)
+                      Expenses page (render, modal, recurring logic)
+                      Page navigation (navigateTo)
+                      Settings page (initSettingsPage, linked accounts, payday)
+                      Budget / Dashboard (getPayday, getBudgetPeriod, renderBudgetPage)
+                      Wishlist (renderWishlist, showWishlistModal)
+
+  dist/             Build output. The .exe here is what you run.
+                    budget-data.json is created here on first run and lives
+                    alongside the exe (portable storage via PORTABLE_EXECUTABLE_DIR).
+
+  package.json      electron-builder config. productName = "Budget", portable
+                    target, x64 only.
+
+
+--------------------------------------------------------------------------------
+DATA STRUCTURE  (budget-data.json)
+--------------------------------------------------------------------------------
+
+  {
+    banks: [
+      {
+        id, name,
+        accounts: [ { id, name, balance, currency } ]
+      }
+    ],
+
+    expenses: [
+      {
+        id, name,
+        bankId, accountId,
+        amount, currency,
+        nextDate,          -- YYYY-MM-DD, the next due date
+        categoryId,
+        isDirectDebit,     -- bool: auto-advances date if past due on save
+        isRecurring,       -- bool: rolls forward monthly, logs history
+        isPaid             -- bool: toggled manually, resets on recurring rollover
+      }
+    ],
+
+    expenseHistory: [
+      {
+        id, name, amount, currency, date,
+        bankId, accountId, categoryId, isDirectDebit
+      }
+    ],
+
+    wishlist: [
+      {
+        id, name,
+        price, currency,
+        bankId, accountId,  -- account to check affordability against
+        url                 -- optional product link
+      }
+    ],
+
+    categories: [ { id, name } ],
+
+    exchangeRates: { EUR: 1, USD: 0.92, GBP: 1.17 },
+    preferredCurrency: "EUR",
+
+    settings: {
+      monthlyBudget,        -- discretionary spending target for the period
+      budgetBankId,         -- linked budget account (the one you spend from)
+      budgetAccountId,
+      mainBankId,           -- linked main account (informational)
+      mainAccountId,
+      paydayType,           -- "last" | "lastWorkday" | "specific"
+      paydayDay             -- day number if paydayType === "specific"
+    }
+  }
+
+
+--------------------------------------------------------------------------------
+PAGES
+--------------------------------------------------------------------------------
+
+DASHBOARD  (default landing page, also accessed by clicking the "Budget" logo)
+
+  Row 1 — Full-width budget period card
+    Shows the linked budget account name, a time bar filling left-to-right
+    as the period progresses, and a pace status on the right:
+      - "↓ €X under pace" (green) or "↑ €X over pace" (red)
+      - Derived from: implied spend = budget - current balance
+        vs expected spend = (budget / days in period) * days elapsed
+
+  Row 2 — Four stat cards
+    Budget balance, Daily budget, Daily remaining, Days left in period
+
+  Row 3 — Three summary cards
+    Net worth (sum of all accounts in EUR)
+    Expenses this period (total committed spend + overdue count)
+    Wishlist (item count + how many you can currently afford)
+
+  Row 4 — Upcoming expenses list
+    Next 6 expenses sorted by date. Colour-coded dots:
+      red = overdue, amber = due within 7 days, grey = fine
+
+  Budget period logic:
+    Period = (last payday + 1 day) through next payday.
+    Payday can be last day of month, last working day, or a specific day.
+    Configured in Settings. getPayday() and getBudgetPeriod() in renderer.js.
+
+
+ACCOUNTS
+
+  Lists all banks and their accounts. Shows net worth, currency breakdown,
+  and exchange rates (click to edit inline).
+  Add bank / add account via modal.
+  Balance editable inline by clicking it.
+  Currency shown as a pill, editable inline.
+
+
+EXPENSES
+
+  Two tabs: Upcoming and History.
+
+  Upcoming: all expenses sorted by date. Colour-coded by status
+  (overdue = red, due soon = amber). Add/edit via modal.
+
+  Fields: name, bank+account, amount, currency, date, category,
+          Direct Debit flag, Recurring flag, Paid flag.
+
+  Direct Debit logic:
+    If a DD expense is saved with a past date, it auto-advances month by month
+    until the date is today or in the future, and marks it as paid.
+
+  Recurring logic:
+    On app load and on navigating to Expenses, processRecurringExpenses() runs.
+    Any recurring expense whose nextDate has passed gets:
+      1. Its past occurrence recorded to expenseHistory
+      2. nextDate rolled forward one month
+      3. isPaid reset to false
+    This means recurring expenses are always self-maintaining.
+
+  History tab:
+    Shows past occurrences of recurring expenses. Read-only, sorted newest first.
+
+
+WISHLIST
+
+  List of items you're saving for. Sortable by clicking column headers
+  (Item, Price, Account, Can afford).
+
+  Each row shows: name, price, linked account, affordability badge
+  (green ✓ Yes / red ✗ €X short / grey — if no account linked),
+  an external link button (opens in default browser), edit and delete.
+
+  Add/edit via modal: name, price, currency, bank+account cascade, URL.
+
+
+SETTINGS
+
+  Budget          — Monthly budget amount for the discretionary period
+  Linked Accounts — Budget account + Main account (bank → account cascade)
+  Payday          — Last day / Last working day / Specific day of month
+  Categories      — Add or remove expense categories
+  Data            — Shows the path where budget-data.json is saved
+
+
+--------------------------------------------------------------------------------
+DESIGN DECISIONS & WHY
+--------------------------------------------------------------------------------
+
+All CSS inlined in index.html
+  Keeps the project self-contained. No build step, no missing stylesheets.
+  One file to look at for all visual changes.
+
+No framework
+  The UI is simple enough that React/Vue would add complexity without benefit.
+  Vanilla JS with direct DOM manipulation is fast and easy to debug.
+
+Atomic file saves
+  Write to .tmp first, then rename over the real file. A crash mid-write
+  leaves the old file intact. A backup copy is kept one write behind.
+  No data loss on power cut or crash.
+
+Portable data (PORTABLE_EXECUTABLE_DIR)
+  When running as a portable exe, Electron sets PORTABLE_EXECUTABLE_DIR to
+  the folder containing the exe. Data is stored there instead of AppData,
+  so copying the folder to another PC brings all data with it.
+
+onchange not addEventListener for settings selects
+  initSettingsPage() is called every time you navigate to Settings.
+  Using .onchange = replaces the handler each time, preventing duplicate
+  listeners stacking up on every visit.
+
+Currency stored per expense/wishlist item
+  Accounts can be in different currencies. Expenses and wishlist items
+  store their own currency and are converted to EUR for comparisons using
+  exchangeRates. This handles multi-currency households correctly.
+
+
+--------------------------------------------------------------------------------
+KNOWN LIMITATIONS / FUTURE IDEAS
+--------------------------------------------------------------------------------
+
+  - Exchange rates are set manually. No live feed.
+  - No charts or graphs (deferred — would need a Reports page).
+  - Wishlist has no target date or savings tracking.
+  - No multi-user / shared access.
+  - No import from bank statements.
+  - Balance updates are manual (the whole app is manual-entry by design).
+
+
+================================================================================
