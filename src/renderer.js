@@ -676,7 +676,14 @@ function showModal({ title, fields, confirmLabel = 'Add', onConfirm }) {
       input = document.createElement('select');
       for (const opt of f.options) {
         const o = document.createElement('option');
-        o.value = opt; o.textContent = opt;
+        if (typeof opt === 'object') {
+          o.value = opt.value;
+          o.textContent = opt.label;
+          if (opt.disabled) o.disabled = true;
+        } else {
+          o.value = opt;
+          o.textContent = opt;
+        }
         input.appendChild(o);
       }
     } else {
@@ -734,7 +741,77 @@ function showAddAccountModal(bank) {
   });
 }
 
+function getAccountOptions() {
+  const options = [];
+  for (const bank of data.banks) {
+    for (const account of bank.accounts) {
+      options.push({
+        value: `${bank.id}::${account.id}`,
+        label: `${bank.name} - ${account.name} (${account.currency})`
+      });
+    }
+  }
+  return options;
+}
+
+function findAccountRef(value) {
+  const [bankId, accountId] = String(value || '').split('::');
+  const bank = data.banks.find(b => b.id === bankId);
+  const account = bank?.accounts.find(a => a.id === accountId);
+  return bank && account ? { bank, account } : null;
+}
+
+function fromEUR(amountEUR, currency) {
+  const rate = data.exchangeRates[currency] ?? 1;
+  return rate ? amountEUR / rate : amountEUR;
+}
+
+function showTransferModal() {
+  const accounts = getAccountOptions();
+  if (accounts.length < 2) {
+    alert('Add at least two accounts before making a transfer.');
+    return;
+  }
+
+  showModal({
+    title: 'Transfer between accounts',
+    confirmLabel: 'Transfer',
+    fields: [
+      { name: 'from', label: 'From account', type: 'select', options: accounts },
+      { name: 'to', label: 'To account', type: 'select', options: accounts, value: accounts[1]?.value },
+      { name: 'amount', label: 'Amount leaving source account', type: 'number', placeholder: '0.00', step: '0.01', min: 0 }
+    ],
+    onConfirm: ({ from, to, amount }) => {
+      const source = findAccountRef(from);
+      const target = findAccountRef(to);
+      const sourceAmount = parseFloat(amount);
+
+      if (!source || !target) {
+        alert('Choose both accounts for the transfer.');
+        return;
+      }
+      if (from === to) {
+        alert('Choose two different accounts for a transfer.');
+        return;
+      }
+      if (!Number.isFinite(sourceAmount) || sourceAmount <= 0) {
+        alert('Enter a transfer amount greater than zero.');
+        return;
+      }
+
+      const eurAmount = toEUR(sourceAmount, source.account.currency);
+      const targetAmount = fromEUR(eurAmount, target.account.currency);
+      source.account.balance = Number((source.account.balance - sourceAmount).toFixed(2));
+      target.account.balance = Number((target.account.balance + targetAmount).toFixed(2));
+      save();
+      render();
+      if (document.getElementById('page-budget').style.display !== 'none') renderBudgetPage();
+    }
+  });
+}
+
 document.getElementById('btn-add-bank').addEventListener('click', showAddBankModal);
+document.getElementById('btn-transfer').addEventListener('click', showTransferModal);
 document.getElementById('modal-cancel').addEventListener('click', hideModal);
 document.getElementById('modal-close').addEventListener('click', hideModal);
 document.getElementById('modal-overlay').addEventListener('click', (e) => {
@@ -1141,6 +1218,8 @@ function navigateTo(page) {
   document.getElementById('btn-add-bank').style.display    = page === 'accounts' ? '' : 'none';
   document.getElementById('btn-add-expense').style.display = page === 'expenses' ? '' : 'none';
   document.getElementById('btn-add-wish').style.display    = page === 'wishlist' ? '' : 'none';
+  document.getElementById('btn-transfer').style.display    = ['accounts', 'budget'].includes(page) ? '' : 'none';
+  document.getElementById('btn-transfer').disabled         = getAccountOptions().length < 2;
 
   const titles = { accounts: 'Accounts', expenses: 'Expenses', budget: 'Dashboard', wishlist: 'Wishlist', settings: 'Settings' };
   document.getElementById('page-title').textContent = titles[page] || page;
