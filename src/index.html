@@ -636,6 +636,7 @@ body {
 #page-accounts { display: flex; flex-direction: column; gap: 22px; }
 #page-expenses { display: none; flex-direction: column; gap: 22px; }
 #page-settings { display: none; flex-direction: column; gap: 24px; }
+#page-transfer { display: none; flex-direction: column; gap: 18px; }
 
 /* ── Expense tabs ── */
 .exp-tab-bar {
@@ -1204,6 +1205,32 @@ body {
 }
 .settings-sel:focus { border-color: var(--accent); }
 
+.transfer-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr 150px auto;
+  gap: 12px;
+  align-items: end;
+  padding: 16px 20px 20px;
+}
+.transfer-form .field-row {
+  min-width: 0;
+}
+.transfer-form select,
+.transfer-form input {
+  width: 100%;
+}
+.transfer-summary {
+  padding: 0 20px 18px;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.transfer-empty {
+  padding: 18px 20px;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -1266,7 +1293,7 @@ body {
     height: 100%;
     padding: 6px;
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 4px;
   }
   #sidebar-bottom {
@@ -1403,6 +1430,13 @@ body {
     flex: 1 1 130px;
     justify-content: center;
   }
+  .transfer-form {
+    grid-template-columns: 1fr;
+    padding: 14px;
+  }
+  .transfer-summary {
+    padding: 0 14px 14px;
+  }
   .budget-period-card {
     grid-template-columns: 1fr;
     gap: 12px;
@@ -1514,6 +1548,10 @@ body {
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
           Expenses
         </a>
+        <a class="nav-item" data-page="transfer">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h11l-3-3"/><path d="M17 17H6l3 3"/><path d="M18 7l-3 3"/><path d="M6 17l3-3"/></svg>
+          Transfer
+        </a>
         <a class="nav-item" data-page="wishlist">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78L12 21.23l8.84-8.84a5.5 5.5 0 0 0 0-7.78z"/></svg>
           Wishlist
@@ -1537,10 +1575,6 @@ body {
         <div id="topbar-right">
           <span id="sync-status-badge" class="sync-badge">Local only</span>
           <button id="btn-lock-app" class="btn-secondary" type="button" style="display:none">Lock</button>
-          <button id="btn-transfer" class="btn-secondary" type="button" style="display:none">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h11l-3-3"/><path d="M17 17H6l3 3"/><path d="M18 7l-3 3"/><path d="M6 17l3-3"/></svg>
-            Transfer
-          </button>
           <button id="btn-add-bank" class="btn-primary">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             Add bank
@@ -1719,6 +1753,32 @@ body {
           </div>
 
         </div><!-- /page-budget -->
+
+        <!-- Transfer page -->
+        <div id="page-transfer">
+          <div class="settings-section">
+            <div class="settings-section-title">Transfer</div>
+            <div id="transfer-empty" class="transfer-empty" style="display:none">
+              Add at least two accounts before making a transfer.
+            </div>
+            <form id="transfer-form" class="transfer-form">
+              <div class="field-row">
+                <label for="transfer-from">From account</label>
+                <select id="transfer-from"></select>
+              </div>
+              <div class="field-row">
+                <label for="transfer-to">To account</label>
+                <select id="transfer-to"></select>
+              </div>
+              <div class="field-row">
+                <label for="transfer-amount">Amount</label>
+                <input id="transfer-amount" type="number" step="0.01" min="0" placeholder="0.00" />
+              </div>
+              <button id="btn-submit-transfer" class="btn-primary" type="submit">Transfer</button>
+            </form>
+            <div id="transfer-summary" class="transfer-summary"></div>
+          </div>
+        </div><!-- /page-transfer -->
 
         <!-- ── Wishlist page ── -->
         <div id="page-wishlist">

@@ -782,36 +782,101 @@ function showTransferModal() {
       { name: 'amount', label: 'Amount leaving source account', type: 'number', placeholder: '0.00', step: '0.01', min: 0 }
     ],
     onConfirm: ({ from, to, amount }) => {
-      const source = findAccountRef(from);
-      const target = findAccountRef(to);
-      const sourceAmount = parseFloat(amount);
-
-      if (!source || !target) {
-        alert('Choose both accounts for the transfer.');
-        return;
-      }
-      if (from === to) {
-        alert('Choose two different accounts for a transfer.');
-        return;
-      }
-      if (!Number.isFinite(sourceAmount) || sourceAmount <= 0) {
-        alert('Enter a transfer amount greater than zero.');
-        return;
-      }
-
-      const eurAmount = toEUR(sourceAmount, source.account.currency);
-      const targetAmount = fromEUR(eurAmount, target.account.currency);
-      source.account.balance = Number((source.account.balance - sourceAmount).toFixed(2));
-      target.account.balance = Number((target.account.balance + targetAmount).toFixed(2));
-      save();
-      render();
+      performTransfer(from, to, amount);
       if (document.getElementById('page-budget').style.display !== 'none') renderBudgetPage();
     }
   });
 }
 
+function performTransfer(from, to, amount) {
+  const source = findAccountRef(from);
+  const target = findAccountRef(to);
+  const sourceAmount = parseFloat(amount);
+
+  if (!source || !target) {
+    alert('Choose both accounts for the transfer.');
+    return false;
+  }
+  if (from === to) {
+    alert('Choose two different accounts for a transfer.');
+    return false;
+  }
+  if (!Number.isFinite(sourceAmount) || sourceAmount <= 0) {
+    alert('Enter a transfer amount greater than zero.');
+    return false;
+  }
+
+  const eurAmount = toEUR(sourceAmount, source.account.currency);
+  const targetAmount = fromEUR(eurAmount, target.account.currency);
+  source.account.balance = Number((source.account.balance - sourceAmount).toFixed(2));
+  target.account.balance = Number((target.account.balance + targetAmount).toFixed(2));
+  save();
+  render();
+  return true;
+}
+
+function renderTransferPage() {
+  const accounts = getAccountOptions();
+  const form = document.getElementById('transfer-form');
+  const empty = document.getElementById('transfer-empty');
+  const fromSel = document.getElementById('transfer-from');
+  const toSel = document.getElementById('transfer-to');
+  const amountInput = document.getElementById('transfer-amount');
+  const submitBtn = document.getElementById('btn-submit-transfer');
+
+  fromSel.innerHTML = '';
+  toSel.innerHTML = '';
+  for (const option of accounts) {
+    const fromOption = document.createElement('option');
+    fromOption.value = option.value;
+    fromOption.textContent = option.label;
+    fromSel.appendChild(fromOption);
+
+    const toOption = document.createElement('option');
+    toOption.value = option.value;
+    toOption.textContent = option.label;
+    toSel.appendChild(toOption);
+  }
+
+  const canTransfer = accounts.length >= 2;
+  form.style.display = canTransfer ? 'grid' : 'none';
+  empty.style.display = canTransfer ? 'none' : '';
+  submitBtn.disabled = !canTransfer;
+
+  if (canTransfer && fromSel.value === toSel.value) {
+    toSel.value = accounts.find(option => option.value !== fromSel.value)?.value || accounts[1].value;
+  }
+
+  updateTransferSummary();
+  if (canTransfer && document.activeElement !== amountInput && !amountInput.value) amountInput.value = '';
+}
+
+function updateTransferSummary() {
+  const summary = document.getElementById('transfer-summary');
+  const from = document.getElementById('transfer-from')?.value;
+  const to = document.getElementById('transfer-to')?.value;
+  const amount = parseFloat(document.getElementById('transfer-amount')?.value);
+  const source = findAccountRef(from);
+  const target = findAccountRef(to);
+
+  if (!summary || !source || !target) {
+    if (summary) summary.textContent = '';
+    return;
+  }
+  if (from === to) {
+    summary.textContent = 'Choose two different accounts.';
+    return;
+  }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    summary.textContent = 'Enter the amount leaving the source account.';
+    return;
+  }
+
+  const targetAmount = fromEUR(toEUR(amount, source.account.currency), target.account.currency);
+  summary.textContent = `${fmtCurrency(amount, source.account.currency)} leaves ${source.account.name}; ${fmtCurrency(targetAmount, target.account.currency)} arrives in ${target.account.name}.`;
+}
+
 document.getElementById('btn-add-bank').addEventListener('click', showAddBankModal);
-document.getElementById('btn-transfer').addEventListener('click', showTransferModal);
 document.getElementById('modal-cancel').addEventListener('click', hideModal);
 document.getElementById('modal-close').addEventListener('click', hideModal);
 document.getElementById('modal-overlay').addEventListener('click', (e) => {
@@ -826,6 +891,29 @@ document.getElementById('modal-form').addEventListener('submit', (e) => {
   });
   _modalCallback(values);
   hideModal();
+});
+document.getElementById('transfer-form')?.addEventListener('submit', (e) => {
+  e.preventDefault();
+  const ok = performTransfer(
+    document.getElementById('transfer-from').value,
+    document.getElementById('transfer-to').value,
+    document.getElementById('transfer-amount').value
+  );
+  if (!ok) return;
+  document.getElementById('transfer-amount').value = '';
+  renderTransferPage();
+});
+['transfer-from', 'transfer-to', 'transfer-amount'].forEach(id => {
+  document.getElementById(id)?.addEventListener('input', updateTransferSummary);
+  document.getElementById(id)?.addEventListener('change', () => {
+    const fromSel = document.getElementById('transfer-from');
+    const toSel = document.getElementById('transfer-to');
+    const accounts = getAccountOptions();
+    if (fromSel && toSel && fromSel.value === toSel.value && accounts.length > 1) {
+      toSel.value = accounts.find(option => option.value !== fromSel.value)?.value || toSel.value;
+    }
+    updateTransferSummary();
+  });
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') { hideModal(); hideExpenseModal(); }
@@ -1212,20 +1300,20 @@ function navigateTo(page) {
   document.getElementById('page-accounts').style.display = page === 'accounts' ? 'flex' : 'none';
   document.getElementById('page-expenses').style.display = page === 'expenses' ? 'flex' : 'none';
   document.getElementById('page-budget').style.display   = page === 'budget'   ? 'flex' : 'none';
+  document.getElementById('page-transfer').style.display = page === 'transfer' ? 'flex' : 'none';
   document.getElementById('page-wishlist').style.display = page === 'wishlist' ? 'flex' : 'none';
   document.getElementById('page-settings').style.display = page === 'settings' ? 'flex' : 'none';
 
   document.getElementById('btn-add-bank').style.display    = page === 'accounts' ? '' : 'none';
   document.getElementById('btn-add-expense').style.display = page === 'expenses' ? '' : 'none';
   document.getElementById('btn-add-wish').style.display    = page === 'wishlist' ? '' : 'none';
-  document.getElementById('btn-transfer').style.display    = ['accounts', 'budget'].includes(page) ? '' : 'none';
-  document.getElementById('btn-transfer').disabled         = getAccountOptions().length < 2;
 
-  const titles = { accounts: 'Accounts', expenses: 'Expenses', budget: 'Dashboard', wishlist: 'Wishlist', settings: 'Settings' };
+  const titles = { accounts: 'Accounts', expenses: 'Expenses', budget: 'Dashboard', transfer: 'Transfer', wishlist: 'Wishlist', settings: 'Settings' };
   document.getElementById('page-title').textContent = titles[page] || page;
 
   if (page === 'settings') initSettingsPage();
   if (page === 'budget')   renderBudgetPage();
+  if (page === 'transfer') renderTransferPage();
   if (page === 'wishlist') renderWishlist();
   if (page === 'expenses') {
     expenseTab = 'upcoming';
