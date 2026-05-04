@@ -26,6 +26,7 @@
     syncDetail: ''
   };
 
+  let nativeAuthPlugin = null;
   const listeners = new Set();
 
   function emitStatus(status, detail = '') {
@@ -123,7 +124,12 @@
   }
 
   function getNativeAuth() {
-    return window.Capacitor?.Plugins?.NativeAuth || null;
+    if (nativeAuthPlugin) return nativeAuthPlugin;
+    const capacitor = window.Capacitor;
+    if (!capacitor) return null;
+
+    nativeAuthPlugin = capacitor.Plugins?.NativeAuth || capacitor.registerPlugin?.('NativeAuth') || null;
+    return nativeAuthPlugin;
   }
 
   function getGoogleRedirectUri() {
