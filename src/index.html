@@ -152,6 +152,10 @@ body {
 }
 
 .auth-error.active { display: block; }
+.auth-error.ready {
+  background: var(--green-bg);
+  color: var(--green);
+}
 
 #shell { display: flex; height: 100vh; }
 
@@ -242,6 +246,11 @@ body {
 }
 .btn-primary:hover  { background: var(--accent-dark); }
 .btn-primary:active { transform: scale(.98); }
+.btn-primary:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+  transform: none;
+}
 
 .btn-secondary {
   display: inline-flex; align-items: center; gap: 6px;
@@ -251,6 +260,10 @@ body {
   cursor: pointer; transition: background .12s;
 }
 .btn-secondary:hover { background: var(--bg-hover); }
+.btn-secondary:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
 
 .sync-badge {
   display: inline-flex;
@@ -1341,14 +1354,15 @@ body {
       </div>
       <div class="auth-title">Sign in to open your budget</div>
       <div class="auth-copy">
-        This app loads your data from a private Google Drive app-data file. Without Google sign-in, the dashboard stays locked.
+        First save your Google OAuth key, then sign in. Your budget loads from a private Google Drive app-data file.
       </div>
       <div class="auth-field">
         <label for="auth-google-client-id">Google OAuth Client ID</label>
         <input id="auth-google-client-id" type="text" placeholder="1234567890-abc.apps.googleusercontent.com" autocomplete="off" />
       </div>
       <div class="auth-actions">
-        <button id="btn-auth-google" class="btn-primary" type="button">Sign in with Google</button>
+        <button id="btn-auth-save-key" class="btn-secondary" type="button">Save key</button>
+        <button id="btn-auth-google" class="btn-primary" type="button" disabled>Sign in with Google</button>
         <button id="btn-auth-local" class="btn-secondary" type="button">Use local app</button>
       </div>
       <div id="auth-error" class="auth-error"></div>

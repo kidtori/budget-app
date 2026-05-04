@@ -143,6 +143,14 @@
     });
   }
 
+  async function prepareGoogleAuth() {
+    if (!state.clientId) throw new Error('Add a Google OAuth Client ID first.');
+    emitStatus('Loading Google sign-in...');
+    await loadGis();
+    emitStatus('Google sign-in ready', 'Tap Sign in with Google.');
+    return true;
+  }
+
   async function driveFetch(url, options = {}) {
     if (!state.accessToken) await requestToken('consent');
     const res = await fetch(url, {
@@ -566,6 +574,7 @@
     connectGoogle,
     pullGoogle,
     configureGoogle,
+    prepareGoogleAuth,
     connectOneDrive,
     pullOneDrive,
     configureOneDrive,

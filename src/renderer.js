@@ -31,6 +31,7 @@ let _editingExpenseId = null;
 let expenseTab = 'upcoming';
 let wishSort = { col: 'name', dir: 'asc' };
 let appStarted = false;
+let authPreparedClientId = '';
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 async function init() {
@@ -68,13 +69,19 @@ async function startApp(options = {}) {
 function setupAuthGate() {
   const info = window.dataStore?.getInfo?.();
   const input = document.getElementById('auth-google-client-id');
+  const saveKeyBtn = document.getElementById('btn-auth-save-key');
+  const googleBtn = document.getElementById('btn-auth-google');
   const localBtn = document.getElementById('btn-auth-local');
   if (input && info?.clientId) input.value = info.clientId;
+  input?.addEventListener('input', () => {
+    if (googleBtn) googleBtn.disabled = input.value.trim() !== authPreparedClientId;
+  });
   if (localBtn && !['localhost', '127.0.0.1', ''].includes(location.hostname)) {
     localBtn.style.display = 'none';
   }
 
-  document.getElementById('btn-auth-google')?.addEventListener('click', unlockWithGoogle);
+  saveKeyBtn?.addEventListener('click', prepareGoogleLogin);
+  googleBtn?.addEventListener('click', unlockWithGoogle);
   document.getElementById('btn-auth-local')?.addEventListener('click', async () => {
     sessionStorage.setItem('budget.auth.unlocked', 'true');
     await startApp();
@@ -85,7 +92,37 @@ function setupAuthGate() {
   });
 }
 
-function showAuthGate(message = '') {
+async function prepareGoogleLogin() {
+  const input = document.getElementById('auth-google-client-id');
+  const clientId = input.value.trim();
+  const saveKeyBtn = document.getElementById('btn-auth-save-key');
+  const googleBtn = document.getElementById('btn-auth-google');
+
+  if (!clientId) {
+    showAuthGate('Paste your Google OAuth Client ID first.');
+    return;
+  }
+
+  saveKeyBtn.disabled = true;
+  saveKeyBtn.textContent = 'Loading...';
+
+  try {
+    window.dataStore.configureGoogle(clientId);
+    await window.dataStore.prepareGoogleAuth();
+    authPreparedClientId = clientId;
+    if (googleBtn) googleBtn.disabled = false;
+    showAuthGate('Google services are ready. Now tap Sign in with Google.', 'ready');
+  } catch (err) {
+    authPreparedClientId = '';
+    if (googleBtn) googleBtn.disabled = true;
+    showAuthGate(err.message || 'Could not load Google sign-in.');
+  } finally {
+    saveKeyBtn.disabled = false;
+    saveKeyBtn.textContent = 'Save key';
+  }
+}
+
+function showAuthGate(message = '', type = 'error') {
   const gate = document.getElementById('auth-gate');
   const err = document.getElementById('auth-error');
   gate.classList.add('active');
@@ -93,6 +130,7 @@ function showAuthGate(message = '') {
   if (err) {
     err.textContent = message;
     err.classList.toggle('active', Boolean(message));
+    err.classList.toggle('ready', type === 'ready');
   }
 }
 
@@ -110,11 +148,15 @@ async function unlockWithGoogle() {
   }
 
   const btn = document.getElementById('btn-auth-google');
+  if (clientId !== authPreparedClientId) {
+    btn.disabled = true;
+    showAuthGate('Save the key first, then tap Sign in with Google.');
+    return;
+  }
   btn.disabled = true;
   btn.textContent = 'Signing in...';
 
   try {
-    window.dataStore.configureGoogle(clientId);
     const result = await window.dataStore.connectGoogle(data);
     if (result?.data) data = result.data;
     sessionStorage.setItem('budget.auth.unlocked', 'true');
