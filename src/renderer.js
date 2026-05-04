@@ -32,6 +32,7 @@ let expenseTab = 'upcoming';
 let wishSort = { col: 'name', dir: 'asc' };
 let appStarted = false;
 let authPreparedClientId = '';
+const AUTH_UNLOCK_KEY = 'budget.auth.unlocked';
 
 // ── Bootstrap ──────────────────────────────────────────────────────────────
 async function init() {
@@ -48,7 +49,7 @@ async function init() {
 
 function shouldShowAuthGate() {
   if (window.api) return false;
-  return sessionStorage.getItem('budget.auth.unlocked') !== 'true';
+  return localStorage.getItem(AUTH_UNLOCK_KEY) !== 'true';
 }
 
 async function startApp(options = {}) {
@@ -91,13 +92,22 @@ function setupAuthGate() {
   saveKeyBtn?.addEventListener('click', prepareGoogleLogin);
   googleBtn?.addEventListener('click', unlockWithGoogle);
   document.getElementById('btn-auth-local')?.addEventListener('click', async () => {
-    sessionStorage.setItem('budget.auth.unlocked', 'true');
+    rememberAuthUnlock();
     await startApp();
   });
   document.getElementById('btn-lock-app')?.addEventListener('click', () => {
-    sessionStorage.removeItem('budget.auth.unlocked');
+    forgetAuthUnlock();
     location.reload();
   });
+}
+
+function rememberAuthUnlock() {
+  localStorage.setItem(AUTH_UNLOCK_KEY, 'true');
+}
+
+function forgetAuthUnlock() {
+  localStorage.removeItem(AUTH_UNLOCK_KEY);
+  sessionStorage.removeItem(AUTH_UNLOCK_KEY);
 }
 
 async function prepareGoogleLogin() {
@@ -167,7 +177,7 @@ async function unlockWithGoogle() {
   try {
     const result = await window.dataStore.connectGoogle(data);
     if (result?.data) data = result.data;
-    sessionStorage.setItem('budget.auth.unlocked', 'true');
+    rememberAuthUnlock();
     await startApp({ reloadData: false });
   } catch (err) {
     showAuthGate(err.message || 'Could not sign in with Google.');
