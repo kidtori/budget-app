@@ -41,6 +41,9 @@
       mode: state.mode,
       clientId: state.clientId,
       oneDriveClientId: state.oneDriveClientId,
+      capacitorAvailable: Boolean(window.Capacitor),
+      nativeAuthAvailable: Boolean(getNativeAuth()),
+      androidWebView: isAndroidWebView(),
       signedIn: Boolean(state.accessToken || state.oneDriveAccessToken),
       fileId: state.fileId,
       oneDriveItemId: state.oneDriveItemId,
@@ -132,6 +135,17 @@
     return nativeAuthPlugin;
   }
 
+  function isAndroidWebView() {
+    return /Android/i.test(navigator.userAgent) && (/\bwv\b/i.test(navigator.userAgent) || Boolean(window.Capacitor));
+  }
+
+  function requireNativeAuthForAndroid() {
+    if (!isAndroidWebView()) return null;
+    const nativeAuth = getNativeAuth();
+    if (nativeAuth) return nativeAuth;
+    throw new Error('Android sign-in bridge not found. Install the newest APK from dist/android, then reopen the app.');
+  }
+
   function getGoogleRedirectUri() {
     return new URL('oauth.html', window.location.href.split('#')[0]).href;
   }
@@ -160,7 +174,7 @@
   }
 
   async function requestNativeToken() {
-    const nativeAuth = getNativeAuth();
+    const nativeAuth = requireNativeAuthForAndroid();
     if (!nativeAuth) throw new Error('Native sign-in is not available in this app.');
     if (!state.clientId) throw new Error('Add a Google OAuth Client ID first.');
 
@@ -212,7 +226,7 @@
 
   async function requestToken(prompt = 'consent') {
     if (!state.clientId) throw new Error('Add a Google OAuth Client ID first.');
-    if (getNativeAuth()) return requestNativeToken();
+    if (getNativeAuth() || isAndroidWebView()) return requestNativeToken();
     await loadGis();
 
     return new Promise((resolve, reject) => {
@@ -235,7 +249,8 @@
 
   async function prepareGoogleAuth() {
     if (!state.clientId) throw new Error('Add a Google OAuth Client ID first.');
-    if (getNativeAuth()) {
+    if (getNativeAuth() || isAndroidWebView()) {
+      requireNativeAuthForAndroid();
       emitStatus('Android sign-in ready', 'Tap Sign in with Google.');
       return true;
     }

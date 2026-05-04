@@ -72,7 +72,15 @@ function setupAuthGate() {
   const saveKeyBtn = document.getElementById('btn-auth-save-key');
   const googleBtn = document.getElementById('btn-auth-google');
   const localBtn = document.getElementById('btn-auth-local');
+  const env = document.getElementById('auth-env');
   if (input && info?.clientId) input.value = info.clientId;
+  if (env && info) {
+    env.textContent = info.nativeAuthAvailable
+      ? 'Android app sign-in bridge detected.'
+      : info.androidWebView
+        ? 'Android app detected, but the sign-in bridge is missing. Install the newest APK if sign-in fails.'
+        : 'Browser sign-in mode.';
+  }
   input?.addEventListener('input', () => {
     if (googleBtn) googleBtn.disabled = input.value.trim() !== authPreparedClientId;
   });
