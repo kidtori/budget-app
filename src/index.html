@@ -65,6 +65,7 @@ body {
 
 .auth-panel {
   width: min(420px, 100%);
+  max-width: 100%;
   background: #fff;
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -113,6 +114,8 @@ body {
 }
 
 .auth-field input {
+  width: 100%;
+  min-width: 0;
   border: 1.5px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 10px 11px;
@@ -1208,15 +1211,42 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: #c8cdd5; }
 
 @media (max-width: 820px) {
-  html, body { overflow: hidden; }
+  html, body {
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+  body { font-size: 14px; }
+  #auth-gate {
+    align-items: flex-start;
+    padding: max(18px, env(safe-area-inset-top)) 14px 18px;
+    overflow-y: auto;
+  }
+  .auth-panel {
+    width: calc(100vw - 28px);
+    max-width: calc(100vw - 28px);
+    padding: 20px;
+    overflow: hidden;
+  }
+  .auth-title { font-size: 21px; }
+  .auth-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .auth-actions .btn-primary,
+  .auth-actions .btn-secondary {
+    justify-content: center;
+    min-height: 44px;
+  }
   #shell {
     flex-direction: column;
-    min-height: 100vh;
+    height: 100dvh;
+    min-height: 100dvh;
   }
   #sidebar {
     order: 2;
     width: 100%;
-    height: 62px;
+    height: calc(64px + env(safe-area-inset-bottom));
+    padding-bottom: env(safe-area-inset-bottom);
     border-right: 0;
     border-top: 1px solid var(--border);
     flex-direction: row;
@@ -1243,11 +1273,11 @@ body {
     margin-top: 0;
     padding: 6px 6px 6px 0;
     border-top: 0;
-    width: 62px;
+    width: 60px;
     height: 100%;
   }
   .nav-item {
-    height: 50px;
+    min-height: 50px;
     justify-content: center;
     flex-direction: column;
     gap: 3px;
@@ -1256,8 +1286,8 @@ body {
     text-align: center;
   }
   #main {
-    height: 100vh;
-    padding-bottom: 62px;
+    height: 100dvh;
+    padding-bottom: calc(64px + env(safe-area-inset-bottom));
   }
   #topbar {
     height: auto;
@@ -1270,17 +1300,19 @@ body {
   }
   #topbar-right {
     gap: 6px;
+    flex-shrink: 0;
   }
   #topbar-right .sync-badge {
     display: none;
   }
   .btn-primary,
   .btn-secondary {
-    padding: 8px 10px;
+    min-height: 40px;
+    padding: 9px 11px;
     font-size: 12px;
   }
   #content {
-    padding: 14px 12px 28px;
+    padding: 14px 12px 34px;
   }
   .summary-strip,
   .budget-stats-grid,
@@ -1290,9 +1322,20 @@ body {
   .summary-card {
     padding: 14px;
   }
+  .summary-value { font-size: 23px; }
+  .bank-card-header { padding: 13px 12px; }
+  .bank-header-left { min-width: 0; }
+  .bank-name-text {
+    display: block;
+    max-width: 42vw;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .account-row,
   .account-list-header {
-    grid-template-columns: minmax(90px, 1fr) 58px 104px 32px;
+    grid-template-columns: minmax(96px, 1fr) 54px 96px 34px;
+    padding: 12px;
   }
   .account-list-header .acc-col-label.right:nth-of-type(4),
   .acc-converted-cell {
@@ -1300,7 +1343,8 @@ body {
   }
   .expense-row,
   #expense-list-header {
-    grid-template-columns: 28px minmax(120px, 1fr) 92px 78px 42px;
+    grid-template-columns: 26px minmax(108px, 1fr) 82px 72px 42px;
+    padding: 12px 10px;
   }
   .expense-row .exp-cat-cell,
   #expense-list-header .exp-col-label:nth-of-type(5) {
@@ -1308,7 +1352,8 @@ body {
   }
   .history-row,
   #expense-history-header {
-    grid-template-columns: 84px minmax(120px, 1fr) 92px;
+    grid-template-columns: 76px minmax(108px, 1fr) 86px;
+    padding: 12px 10px;
   }
   .history-row .exp-cat-cell,
   #expense-history-header .exp-col-label:nth-of-type(4) {
@@ -1316,7 +1361,8 @@ body {
   }
   .wish-header,
   .wish-row {
-    grid-template-columns: minmax(120px, 1fr) 88px 34px 58px;
+    grid-template-columns: minmax(112px, 1fr) 82px 34px 58px;
+    padding: 12px 10px;
   }
   .wish-header button:nth-child(3),
   .wish-header button:nth-child(4),
@@ -1328,18 +1374,90 @@ body {
     align-items: stretch;
     flex-direction: column;
     gap: 12px;
+    padding: 14px;
   }
   .linked-account-selects,
   .sync-client-row {
+    display: grid;
     grid-template-columns: 1fr;
     width: 100%;
+  }
+  .settings-sel,
+  .settings-add-input,
+  .sync-client-input {
+    min-height: 40px;
+    font-size: 13px;
+  }
+  .settings-add-row {
+    padding: 12px 14px 14px;
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .settings-add-row .btn-add-category { min-height: 40px; }
+  .cat-pills-wrap { padding: 12px 14px 0; }
+  .sync-actions { justify-content: stretch; }
+  .sync-actions .btn-primary,
+  .sync-actions .btn-secondary {
+    flex: 1 1 130px;
+    justify-content: center;
+  }
+  .budget-period-card {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .budget-period-right { justify-self: stretch; }
+  #budget-pace-status { text-align: left; }
+  .dash-exp-row {
+    grid-template-columns: 8px 1fr auto;
+    gap: 8px;
+    padding: 12px;
+  }
+  .dash-exp-date { display: none; }
+  .exp-name,
+  .history-date,
+  .exp-date-cell,
+  .exp-amount-cell,
+  .wish-price,
+  .wish-name {
+    font-size: 12px;
+  }
+  .expense-row .exp-edit-btn,
+  .expense-row .exp-delete-btn,
+  .wish-actions,
+  .bank-delete-btn,
+  .acc-delete-btn {
+    opacity: 1;
+  }
+  .exp-actions { gap: 2px; }
+  .exp-edit-btn,
+  .exp-delete-btn,
+  .wish-edit-btn,
+  .wish-del-btn,
+  .acc-delete-btn {
+    min-width: 32px;
+    min-height: 32px;
   }
   #exp-modal,
   #wish-modal,
   #modal {
     width: min(94vw, 480px);
+    max-height: min(88dvh, 680px);
+    overflow-y: auto;
+  }
+  #modal-overlay,
+  #exp-modal-overlay,
+  #wish-modal-overlay {
+    align-items: flex-start;
+    padding: max(14px, env(safe-area-inset-top)) 10px 14px;
+    overflow-y: auto;
   }
   .exp-field-2col {
+    grid-template-columns: 1fr;
+  }
+  #modal-actions,
+  #exp-modal-actions,
+  #wish-modal-actions {
+    display: grid;
     grid-template-columns: 1fr;
   }
 }
