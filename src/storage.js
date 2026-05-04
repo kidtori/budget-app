@@ -6,6 +6,7 @@
   const ONEDRIVE_CLIENT_ID_KEY = 'budget.onedrive.clientId';
   const MODE_KEY = 'budget.storage.mode';
   const FILE_ID_KEY = 'budget.google.fileId';
+  const OAUTH_STATE_KEY = 'budget.google.oauthState';
   const DB_NAME = 'budget-app-cache';
   const STORE_NAME = 'kv';
 
@@ -121,8 +122,91 @@
     });
   }
 
+  function getNativeAuth() {
+    return window.Capacitor?.Plugins?.NativeAuth || null;
+  }
+
+  function getGoogleRedirectUri() {
+    return new URL('oauth.html', window.location.href.split('#')[0]).href;
+  }
+
+  function createNonce() {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  function parseOAuthCallback(url) {
+    const parsed = new URL(url);
+    const params = new URLSearchParams(parsed.search || parsed.hash.replace(/^#/, ''));
+    const error = params.get('error');
+    if (error) throw new Error(params.get('error_description') || error);
+
+    const expectedState = sessionStorage.getItem(OAUTH_STATE_KEY);
+    const actualState = params.get('state');
+    if (!expectedState || actualState !== expectedState) {
+      throw new Error('Google sign-in returned an invalid state. Try again.');
+    }
+
+    const token = params.get('access_token');
+    if (!token) throw new Error('Google did not return an access token.');
+    return token;
+  }
+
+  async function requestNativeToken() {
+    const nativeAuth = getNativeAuth();
+    if (!nativeAuth) throw new Error('Native sign-in is not available in this app.');
+    if (!state.clientId) throw new Error('Add a Google OAuth Client ID first.');
+
+    const oauthState = createNonce();
+    sessionStorage.setItem(OAUTH_STATE_KEY, oauthState);
+    const params = new URLSearchParams({
+      client_id: state.clientId,
+      redirect_uri: getGoogleRedirectUri(),
+      response_type: 'token',
+      scope: GOOGLE_DRIVE_SCOPE,
+      include_granted_scopes: 'true',
+      prompt: 'consent',
+      state: oauthState
+    });
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
+
+    return new Promise(async (resolve, reject) => {
+      let listener = null;
+      const cleanup = () => {
+        sessionStorage.removeItem(OAUTH_STATE_KEY);
+        listener?.remove?.();
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        reject(new Error('Google sign-in timed out. Try again.'));
+      }, 120000);
+
+      try {
+        listener = await nativeAuth.addListener('oauthComplete', event => {
+          try {
+            clearTimeout(timer);
+            const token = parseOAuthCallback(event.url || '');
+            state.accessToken = token;
+            cleanup();
+            resolve(token);
+          } catch (err) {
+            cleanup();
+            reject(err);
+          }
+        });
+        await nativeAuth.open({ url: authUrl });
+      } catch (err) {
+        clearTimeout(timer);
+        cleanup();
+        reject(err);
+      }
+    });
+  }
+
   async function requestToken(prompt = 'consent') {
     if (!state.clientId) throw new Error('Add a Google OAuth Client ID first.');
+    if (getNativeAuth()) return requestNativeToken();
     await loadGis();
 
     return new Promise((resolve, reject) => {
@@ -145,6 +229,10 @@
 
   async function prepareGoogleAuth() {
     if (!state.clientId) throw new Error('Add a Google OAuth Client ID first.');
+    if (getNativeAuth()) {
+      emitStatus('Android sign-in ready', 'Tap Sign in with Google.');
+      return true;
+    }
     emitStatus('Loading Google sign-in...');
     await loadGis();
     emitStatus('Google sign-in ready', 'Tap Sign in with Google.');

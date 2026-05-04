@@ -3,6 +3,8 @@
   "appName": "Budget",
   "webDir": "src",
   "server": {
+    "url": "https://kidtori.github.io/budget-app/",
+    "cleartext": false,
     "androidScheme": "https"
   }
 }

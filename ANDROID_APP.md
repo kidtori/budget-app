@@ -45,6 +45,24 @@ Because this project folder is inside OneDrive, that APK will also be easy to fi
 
 ## Google OAuth Redirects for Android
 
-The current app uses Google Identity Services in a web view. For testing, keep using the GitHub Pages/PWA version for Google Drive sync until the Android auth flow is verified.
+The Android wrapper loads the hosted GitHub Pages app:
 
-The Android wrapper is the next step toward a real APK, but Google sign-in inside Android WebView may require a native auth plugin or redirect adjustment if Google blocks embedded web sign-in.
+```text
+https://kidtori.github.io/budget-app/
+```
+
+This lets Google Identity Services run from the same HTTPS origin used by the browser/PWA version.
+
+Make sure the Google OAuth Web Client has this authorized JavaScript origin:
+
+```text
+https://kidtori.github.io
+```
+
+It also uses the phone browser for Android sign-in and returns to the app with this redirect page. Add it as an authorized redirect URI:
+
+```text
+https://kidtori.github.io/budget-app/oauth.html
+```
+
+After installing a rebuilt APK, the app opens Google sign-in in the browser and then deep-links back into Budget.
