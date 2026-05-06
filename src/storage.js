@@ -7,6 +7,8 @@
   const MODE_KEY = 'budget.storage.mode';
   const FILE_ID_KEY = 'budget.google.fileId';
   const OAUTH_STATE_KEY = 'budget.google.oauthState';
+  const GOOGLE_ACCESS_TOKEN_KEY = 'budget.google.accessToken';
+  const GOOGLE_ACCESS_TOKEN_EXPIRY_KEY = 'budget.google.accessTokenExpiry';
   const DB_NAME = 'budget-app-cache';
   const STORE_NAME = 'kv';
 
@@ -15,7 +17,7 @@
     clientId: localStorage.getItem(GOOGLE_CLIENT_ID_KEY) || '',
     oneDriveClientId: localStorage.getItem(ONEDRIVE_CLIENT_ID_KEY) || '',
     fileId: localStorage.getItem(FILE_ID_KEY) || '',
-    accessToken: '',
+    accessToken: getStoredGoogleAccessToken(),
     oneDriveAccessToken: '',
     tokenClient: null,
     msalApp: null,
@@ -51,6 +53,34 @@
       detail: state.syncDetail,
       remoteModifiedTime: state.remoteModifiedTime
     };
+  }
+
+  function getStoredGoogleAccessToken() {
+    const token = localStorage.getItem(GOOGLE_ACCESS_TOKEN_KEY) || '';
+    const expiry = Number(localStorage.getItem(GOOGLE_ACCESS_TOKEN_EXPIRY_KEY) || 0);
+    if (!token || !expiry || expiry <= Date.now() + 60000) {
+      localStorage.removeItem(GOOGLE_ACCESS_TOKEN_KEY);
+      localStorage.removeItem(GOOGLE_ACCESS_TOKEN_EXPIRY_KEY);
+      return '';
+    }
+    return token;
+  }
+
+  function storeGoogleAccessToken(token, expiresInSeconds = 3600) {
+    const safeExpiresIn = Number(expiresInSeconds) || 3600;
+    state.accessToken = token || '';
+    if (!state.accessToken) {
+      clearStoredGoogleAccessToken();
+      return;
+    }
+    localStorage.setItem(GOOGLE_ACCESS_TOKEN_KEY, state.accessToken);
+    localStorage.setItem(GOOGLE_ACCESS_TOKEN_EXPIRY_KEY, String(Date.now() + (safeExpiresIn * 1000)));
+  }
+
+  function clearStoredGoogleAccessToken() {
+    state.accessToken = '';
+    localStorage.removeItem(GOOGLE_ACCESS_TOKEN_KEY);
+    localStorage.removeItem(GOOGLE_ACCESS_TOKEN_EXPIRY_KEY);
   }
 
   function openDb() {
@@ -170,7 +200,10 @@
 
     const token = params.get('access_token');
     if (!token) throw new Error('Google did not return an access token.');
-    return token;
+    return {
+      token,
+      expiresIn: Number(params.get('expires_in') || 3600)
+    };
   }
 
   async function requestNativeToken() {
@@ -207,9 +240,9 @@
           try {
             clearTimeout(timer);
             const token = parseOAuthCallback(event.url || '');
-            state.accessToken = token;
+            storeGoogleAccessToken(token.token, token.expiresIn);
             cleanup();
-            resolve(token);
+            resolve(token.token);
           } catch (err) {
             cleanup();
             reject(err);
@@ -238,7 +271,7 @@
             reject(new Error(response.error_description || response.error));
             return;
           }
-          state.accessToken = response.access_token;
+          storeGoogleAccessToken(response.access_token, response.expires_in);
           resolve(response.access_token);
         }
       });
@@ -271,7 +304,7 @@
     });
 
     if (res.status === 401) {
-      state.accessToken = '';
+      clearStoredGoogleAccessToken();
       await requestToken('consent');
       return driveFetch(url, options);
     }
@@ -526,6 +559,20 @@
       return data;
     }
 
+    if (state.mode === 'google' && state.accessToken) {
+      try {
+        emitStatus('Checking Google Drive...');
+        const file = state.fileId ? await getDriveMetadata() : await findDriveFile();
+        if (file) {
+          const remote = await downloadDriveFile(file.id);
+          emitStatus('Loaded from Google Drive', remote.meta?.modifiedTime || '');
+          return remote.data;
+        }
+      } catch (err) {
+        emitStatus('Offline cache loaded', err.message || 'Could not reach Google Drive.');
+      }
+    }
+
     const cached = await loadCache();
     if (cached?.data) {
       emitStatus(state.mode === 'local' ? 'Browser cache loaded' : 'Offline cache loaded');
@@ -643,6 +690,7 @@
 
   function configureGoogle(clientId) {
     state.clientId = String(clientId || '').trim();
+    clearStoredGoogleAccessToken();
     if (state.clientId) localStorage.setItem(GOOGLE_CLIENT_ID_KEY, state.clientId);
     else localStorage.removeItem(GOOGLE_CLIENT_ID_KEY);
     emitStatus(state.clientId ? 'Google Client ID saved' : 'Google Client ID removed');
@@ -658,7 +706,7 @@
 
   function disconnectGoogle() {
     state.mode = 'local';
-    state.accessToken = '';
+    clearStoredGoogleAccessToken();
     state.oneDriveAccessToken = '';
     localStorage.setItem(MODE_KEY, 'local');
     emitStatus('Local only');
