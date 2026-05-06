@@ -29,6 +29,7 @@ const CAT_COLORS = [
 const collapsed = new Set();
 let _editingExpenseId = null;
 let expenseTab = 'upcoming';
+let expenseSort = { col: 'nextDate', dir: 'asc' };
 let wishSort = { col: 'name', dir: 'asc' };
 let appStarted = false;
 let authPreparedClientId = '';
@@ -287,6 +288,16 @@ function getCatColor(catId) {
   return CAT_COLORS[Math.max(0, idx) % CAT_COLORS.length];
 }
 
+function findOrCreateCategory(name) {
+  const clean = (name || '').trim();
+  if (!clean) return '';
+  const existing = data.categories.find(c => c.name.toLowerCase() === clean.toLowerCase());
+  if (existing) return existing.id;
+  const category = { id: uid(), name: clean };
+  data.categories.push(category);
+  return category.id;
+}
+
 function getAccountLabel(bankId, accountId) {
   const bank = data.banks.find(b => b.id === bankId);
   if (!bank) return '—';
@@ -319,6 +330,15 @@ function advanceDDDate(dateStr) {
   return dateFmt(d);
 }
 
+function advanceRecurringDate(dateStr, intervalMonths = 1) {
+  if (!dateStr) return dateStr;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const d = new Date(dateStr + 'T00:00:00');
+  const step = Math.max(1, parseInt(intervalMonths, 10) || 1);
+  while (d < today) d.setMonth(d.getMonth() + step);
+  return dateFmt(d);
+}
+
 function dateFmt(d) {
   const y  = d.getFullYear();
   const m  = String(d.getMonth() + 1).padStart(2, '0');
@@ -334,12 +354,13 @@ function processRecurringExpenses() {
   let changed = false;
 
   for (const exp of data.expenses) {
-    if (!exp.isRecurring || !exp.nextDate) continue;
+    if (!(exp.isRecurring || exp.isDirectDebit) || !exp.nextDate) continue;
     const d = new Date(exp.nextDate + 'T00:00:00');
     if (d >= today) continue; // nothing to do
 
     // Roll forward, recording each past occurrence
     let cur = new Date(d);
+    const intervalMonths = Math.max(1, parseInt(exp.recurrenceMonths, 10) || 1);
     while (cur < today) {
       data.expenseHistory.push({
         id: uid(),
@@ -351,9 +372,11 @@ function processRecurringExpenses() {
         bankId:       exp.bankId,
         accountId:    exp.accountId,
         categoryId:   exp.categoryId,
-        isDirectDebit: exp.isDirectDebit
+        isDirectDebit: exp.isDirectDebit,
+        recurrenceMonths: intervalMonths,
+        isEssential: !!exp.isEssential
       });
-      cur.setMonth(cur.getMonth() + 1);
+      cur.setMonth(cur.getMonth() + intervalMonths);
     }
     exp.nextDate = dateFmt(cur);
     exp.isPaid   = false; // reset paid flag for the new cycle
@@ -586,6 +609,56 @@ function startInlineNumber(el, current, onCommit) {
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter')  { e.preventDefault(); input.blur(); }
     if (e.key === 'Escape') { input.removeEventListener('blur', commit); render(); committed = true; }
+  });
+}
+
+function startInlineDate(el, current, onCommit) {
+  if (el.querySelector('input')) return;
+  const input = document.createElement('input');
+  input.className = 'inline-input';
+  input.type = 'date';
+  input.value = current || '';
+  el.innerHTML = '';
+  el.appendChild(input);
+  input.focus();
+
+  let committed = false;
+  function commit() { if (committed) return; committed = true; onCommit(input.value); }
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter')  { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { input.removeEventListener('blur', commit); render(); committed = true; }
+  });
+}
+
+function startInlineCategory(el, currentId, onCommit) {
+  if (el.querySelector('select')) return;
+  const select = document.createElement('select');
+  select.className = 'inline-input';
+
+  const blank = document.createElement('option');
+  blank.value = '';
+  blank.textContent = 'No category';
+  select.appendChild(blank);
+
+  for (const cat of data.categories) {
+    const option = document.createElement('option');
+    option.value = cat.id;
+    option.textContent = cat.name;
+    select.appendChild(option);
+  }
+
+  select.value = currentId || '';
+  el.innerHTML = '';
+  el.appendChild(select);
+  select.focus();
+
+  let committed = false;
+  function commit() { if (committed) return; committed = true; onCommit(select.value); }
+  select.addEventListener('change', commit);
+  select.addEventListener('blur', commit);
+  select.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { select.removeEventListener('blur', commit); renderExpenses(); committed = true; }
   });
 }
 
@@ -943,17 +1016,23 @@ function renderExpenses() {
 
 function renderExpSummary() {
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  let totalEUR = 0, ddCount = 0, overdueCount = 0;
+  const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  let totalEUR = 0, ddCount = 0, overdueCount = 0, remainingEUR = 0;
 
   for (const exp of data.expenses) {
     totalEUR += toEUR(exp.amount || 0, exp.currency || 'EUR');
     if (exp.isDirectDebit) ddCount++;
-    if (exp.nextDate && new Date(exp.nextDate + 'T00:00:00') < today) overdueCount++;
+    const due = exp.nextDate ? new Date(exp.nextDate + 'T00:00:00') : null;
+    if (due && due < today && !exp.isPaid) overdueCount++;
+    if (due && due <= monthEnd && !exp.isPaid) {
+      remainingEUR += toEUR(exp.amount || 0, exp.currency || 'EUR');
+    }
   }
 
   document.getElementById('exp-total-value').textContent = fmtEUR(totalEUR);
   document.getElementById('exp-count-value').textContent = data.expenses.length;
   document.getElementById('exp-dd-value').textContent    = ddCount + ' direct debit' + (ddCount !== 1 ? 's' : '');
+  document.getElementById('exp-remaining-value').textContent = fmtEUR(remainingEUR);
 
   const ovEl = document.getElementById('exp-overdue-value');
   ovEl.textContent  = overdueCount;
@@ -976,13 +1055,36 @@ function renderExpList() {
   empty.classList.add('hidden');
   header.classList.remove('hidden');
 
-  const sorted = [...data.expenses].sort((a, b) => {
-    if (!a.nextDate) return 1;
-    if (!b.nextDate) return -1;
-    return new Date(a.nextDate) - new Date(b.nextDate);
-  });
+  const sorted = [...data.expenses].sort(compareExpenses);
 
   for (const exp of sorted) rows.appendChild(makeExpenseRow(exp));
+  updateExpenseSortHeaders();
+}
+
+function compareExpenses(a, b) {
+  const dir = expenseSort.dir === 'desc' ? -1 : 1;
+  const col = expenseSort.col;
+  const get = exp => {
+    if (col === 'name') return (exp.name || '').toLowerCase();
+    if (col === 'nextDate') return exp.nextDate ? new Date(exp.nextDate).getTime() : Number.MAX_SAFE_INTEGER;
+    if (col === 'amount') return toEUR(exp.amount || 0, exp.currency || 'EUR');
+    if (col === 'category') return (data.categories.find(c => c.id === exp.categoryId)?.name || '').toLowerCase();
+    if (col === 'essential') return exp.isEssential ? 0 : 1;
+    return '';
+  };
+  const av = get(a);
+  const bv = get(b);
+  if (av < bv) return -1 * dir;
+  if (av > bv) return 1 * dir;
+  return 0;
+}
+
+function updateExpenseSortHeaders() {
+  document.querySelectorAll('.exp-sort-btn').forEach(btn => {
+    const active = btn.dataset.sort === expenseSort.col;
+    btn.classList.toggle('active', active);
+    btn.querySelector('.exp-sort-arrow').textContent = active ? (expenseSort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+  });
 }
 
 function makeExpenseRow(exp) {
@@ -991,7 +1093,7 @@ function makeExpenseRow(exp) {
   const status = dateStatus(exp.nextDate);
 
   const row = document.createElement('div');
-  row.className = 'expense-row';
+  row.className = 'expense-row' + (exp.isPaid ? ' exp-paid' : '');
   row.dataset.expId = exp.id;
   row.style.borderLeftColor = color.fg;
 
@@ -999,28 +1101,30 @@ function makeExpenseRow(exp) {
                   : status === 'soon'    ? 'exp-date-soon'
                   : 'exp-date-ok';
 
-  const statusCell = exp.isDirectDebit
-    ? `<span class="dd-badge">DD</span>`
-    : `<input type="checkbox" class="exp-paid-cb" ${exp.isPaid ? 'checked' : ''} title="${exp.isPaid ? 'Paid' : 'Mark as paid'}" />`;
+  const statusCell = `<input type="checkbox" class="exp-paid-cb" ${exp.isPaid ? 'checked' : ''} title="${exp.isPaid ? 'Paid' : 'Mark as paid'}" />`;
 
   const amtLine2 = exp.currency !== 'EUR'
     ? `<div class="exp-amount-sub">${fmtEUR(toEUR(exp.amount || 0, exp.currency))}</div>`
     : '';
 
-  const recurText = exp.isRecurring ? ' · <span class="recurring-badge">↻ monthly</span>' : '';
+  const intervalMonths = Math.max(1, parseInt(exp.recurrenceMonths, 10) || 1);
+  const recurLabel = intervalMonths === 1 ? 'monthly' : `every ${intervalMonths} months`;
+  const ddText = exp.isDirectDebit ? ' <span class="dd-badge">DD</span>' : '';
+  const recurText2 = (exp.isRecurring || exp.isDirectDebit) ? ` · <span class="recurring-badge">recurs ${recurLabel}</span>` : '';
+  const essentialText = exp.isEssential ? ' <span class="essential-badge">Essential</span>' : '';
 
   const catPill = cat
-    ? `<span class="exp-cat-pill" style="background:${color.bg};color:${color.fg};border-color:${color.border}">${escHtml(cat.name)}</span>`
-    : '';
+    ? `<span class="exp-cat-pill editable-text" data-field="category" style="background:${color.bg};color:${color.fg};border-color:${color.border}">${escHtml(cat.name)}</span>`
+    : '<span class="exp-cat-empty editable-text" data-field="category">Add category</span>';
 
   row.innerHTML = `
     <div class="exp-status-cell">${statusCell}</div>
     <div class="exp-name-cell">
-      <span class="exp-name">${escHtml(exp.name)}</span>
-      <span class="exp-sub">${escHtml(getAccountLabel(exp.bankId, exp.accountId))}${recurText}</span>
+      <span class="exp-name editable-text" data-field="name">${escHtml(exp.name)}</span>
+      <span class="exp-sub">${escHtml(getAccountLabel(exp.bankId, exp.accountId))}${ddText}${recurText2}${essentialText}</span>
     </div>
-    <div class="exp-date-cell ${dateClass}">${escHtml(fmtDate(exp.nextDate))}</div>
-    <div class="exp-amount-cell">
+    <div class="exp-date-cell editable-text ${dateClass}" data-field="nextDate">${escHtml(fmtDate(exp.nextDate))}</div>
+    <div class="exp-amount-cell editable-text" data-field="amount">
       <div>${escHtml(fmtCurrency(exp.amount || 0, exp.currency || 'EUR'))}</div>
       ${amtLine2}
     </div>
@@ -1038,9 +1142,37 @@ function makeExpenseRow(exp) {
     cb.addEventListener('change', () => {
       exp.isPaid = cb.checked;
       save();
-      renderExpSummary();
+      renderExpenses();
     });
   }
+
+  row.querySelector('[data-field="name"]').addEventListener('click', (e) => {
+    startInlineText(e.currentTarget, exp.name, (val) => {
+      if (val.trim()) { exp.name = val.trim(); save(); renderExpenses(); }
+    });
+  });
+
+  row.querySelector('[data-field="nextDate"]').addEventListener('click', (e) => {
+    startInlineDate(e.currentTarget, exp.nextDate, (val) => {
+      exp.nextDate = val;
+      save();
+      renderExpenses();
+    });
+  });
+
+  row.querySelector('[data-field="amount"]').addEventListener('click', (e) => {
+    startInlineNumber(e.currentTarget, exp.amount, (val) => {
+      if (!isNaN(val)) { exp.amount = val; save(); renderExpenses(); }
+    });
+  });
+
+  row.querySelector('[data-field="category"]').addEventListener('click', (e) => {
+    startInlineCategory(e.currentTarget, exp.categoryId, (val) => {
+      exp.categoryId = val;
+      save();
+      renderExpenses();
+    });
+  });
 
   row.querySelector('.exp-edit-btn').addEventListener('click', () => showExpenseModal(exp));
 
@@ -1167,17 +1299,23 @@ function showExpenseModal(expense = null) {
     document.getElementById('exp-currency').value       = expense.currency || 'EUR';
     document.getElementById('exp-date').value           = expense.nextDate || '';
     document.getElementById('exp-category').value       = expense.categoryId || '';
+    document.getElementById('exp-new-category').value   = '';
+    document.getElementById('exp-recur-months').value   = Math.max(1, parseInt(expense.recurrenceMonths, 10) || 1);
     document.getElementById('exp-is-recurring').checked = !!expense.isRecurring;
     document.getElementById('exp-is-dd').checked        = !!expense.isDirectDebit;
     document.getElementById('exp-is-paid').checked      = !!expense.isPaid;
-    document.getElementById('exp-paid-row').style.display = expense.isDirectDebit ? 'none' : '';
+    document.getElementById('exp-is-essential').checked = !!expense.isEssential;
+    document.getElementById('exp-paid-row').style.display = '';
   } else {
     // Blank form for new expense
     document.getElementById('exp-name').value            = '';
     document.getElementById('exp-amount').value          = '';
+    document.getElementById('exp-new-category').value    = '';
+    document.getElementById('exp-recur-months').value    = 1;
     document.getElementById('exp-is-recurring').checked  = false;
     document.getElementById('exp-is-dd').checked         = false;
     document.getElementById('exp-is-paid').checked       = false;
+    document.getElementById('exp-is-essential').checked  = false;
     document.getElementById('exp-paid-row').style.display = '';
     // Default date = today
     const t = new Date();
@@ -1233,16 +1371,24 @@ document.getElementById('exp-bank').addEventListener('change', function () {
   populateExpAccountSelect(bank || null, null);
 });
 
-document.getElementById('exp-is-dd').addEventListener('change', function () {
-  document.getElementById('exp-paid-row').style.display = this.checked ? 'none' : '';
-});
-
 document.querySelectorAll('.exp-tab').forEach(tab => {
   tab.addEventListener('click', () => {
     expenseTab = tab.dataset.tab;
     document.querySelectorAll('.exp-tab').forEach(t =>
       t.classList.toggle('active', t.dataset.tab === expenseTab)
     );
+    renderExpenses();
+  });
+});
+
+document.querySelectorAll('.exp-sort-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const col = btn.dataset.sort;
+    if (expenseSort.col === col) {
+      expenseSort.dir = expenseSort.dir === 'asc' ? 'desc' : 'asc';
+    } else {
+      expenseSort = { col, dir: col === 'essential' ? 'asc' : 'asc' };
+    }
     renderExpenses();
   });
 });
@@ -1255,16 +1401,19 @@ document.getElementById('exp-modal-form').addEventListener('submit', (e) => {
   const accountId = document.getElementById('exp-account').value;
   const amount    = parseFloat(document.getElementById('exp-amount').value) || 0;
   const currency  = document.getElementById('exp-currency').value;
-  const catId       = document.getElementById('exp-category').value;
+  const newCatName  = document.getElementById('exp-new-category').value.trim();
+  const catId       = newCatName ? findOrCreateCategory(newCatName) : document.getElementById('exp-category').value;
   const isDD        = document.getElementById('exp-is-dd').checked;
   const isRecurring = document.getElementById('exp-is-recurring').checked;
-  const isPaid      = !isDD && document.getElementById('exp-is-paid').checked;
+  const isPaid      = document.getElementById('exp-is-paid').checked;
+  const isEssential = document.getElementById('exp-is-essential').checked;
+  const recurrenceMonths = Math.max(1, parseInt(document.getElementById('exp-recur-months').value, 10) || 1);
   let   nextDate    = document.getElementById('exp-date').value;
 
   if (!name) { document.getElementById('exp-name').focus(); return; }
 
   // For DDs and recurring expenses, roll any past date forward to the next future occurrence
-  if ((isDD || isRecurring) && nextDate) nextDate = advanceDDDate(nextDate);
+  if ((isDD || isRecurring) && nextDate) nextDate = advanceRecurringDate(nextDate, recurrenceMonths);
 
   if (_editingExpenseId) {
     const idx = data.expenses.findIndex(e => e.id === _editingExpenseId);
@@ -1272,7 +1421,7 @@ document.getElementById('exp-modal-form').addEventListener('submit', (e) => {
       data.expenses[idx] = {
         ...data.expenses[idx],
         name, bankId, accountId, amount, currency, nextDate,
-        categoryId: catId, isDirectDebit: isDD, isRecurring, isPaid
+        categoryId: catId, isDirectDebit: isDD, isRecurring, isPaid, recurrenceMonths, isEssential
       };
     }
   } else {
@@ -1282,7 +1431,9 @@ document.getElementById('exp-modal-form').addEventListener('submit', (e) => {
       categoryId: catId,
       isDirectDebit: isDD,
       isRecurring,
-      isPaid
+      isPaid,
+      recurrenceMonths,
+      isEssential
     });
   }
 

@@ -709,26 +709,47 @@ body {
   overflow: hidden;
 }
 
+#page-expenses .summary-strip {
+  grid-template-columns: repeat(4, 1fr);
+}
+
 #expense-list-header {
   display: grid;
-  grid-template-columns: 36px 1fr 120px 130px 110px 60px;
+  grid-template-columns: 42px minmax(220px, 1fr) 138px 150px 190px 70px;
   align-items: center;
+  column-gap: 18px;
   padding: 7px 18px 7px 16px;
   background: #fafbfc;
   border-bottom: 1px solid var(--border-light);
 }
 #expense-list-header.hidden { display: none; }
 
-.exp-col-label {
+.exp-col-label,
+.exp-sort-btn {
   font-size: 10px; font-weight: 600; color: var(--text-3);
   text-transform: uppercase; letter-spacing: .06em;
 }
 .exp-col-label.right { text-align: right; }
+.exp-sort-btn {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font);
+}
+.exp-sort-btn.right { text-align: right; }
+.exp-sort-btn:hover,
+.exp-sort-btn.active { color: var(--accent); }
+.exp-sort-icon { text-align: center; font-size: 13px; letter-spacing: 0; }
+.exp-sort-arrow { letter-spacing: 0; }
 
 .expense-row {
   display: grid;
-  grid-template-columns: 36px 1fr 120px 130px 110px 60px;
+  grid-template-columns: 42px minmax(220px, 1fr) 138px 150px 190px 70px;
   align-items: center;
+  column-gap: 18px;
   padding: 11px 18px 11px 13px;
   border-bottom: 1px solid var(--border-light);
   border-left: 3px solid transparent;
@@ -736,9 +757,10 @@ body {
 }
 .expense-row:last-child { border-bottom: none; }
 .expense-row:hover { background: var(--bg-hover); }
+.expense-row.exp-paid { opacity: .72; }
 
 .exp-status-cell {
-  display: flex; align-items: center; justify-content: center;
+  display: flex; align-items: center; justify-content: center; gap: 5px;
 }
 
 .dd-badge {
@@ -750,7 +772,7 @@ body {
 }
 
 .exp-paid-cb {
-  width: 14px; height: 14px; cursor: pointer;
+  width: 16px; height: 16px; cursor: pointer;
   accent-color: var(--accent);
 }
 
@@ -759,6 +781,21 @@ body {
 .exp-name {
   font-size: 13px; font-weight: 500; color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.exp-name.editable-text,
+.exp-date-cell.editable-text,
+.exp-amount-cell.editable-text,
+.exp-cat-pill.editable-text,
+.exp-cat-empty.editable-text {
+  cursor: text;
+}
+.exp-name.editable-text:hover,
+.exp-date-cell.editable-text:hover,
+.exp-amount-cell.editable-text:hover,
+.exp-cat-pill.editable-text:hover,
+.exp-cat-empty.editable-text:hover {
+  outline: 1px solid var(--accent);
+  outline-offset: 3px;
 }
 
 .exp-sub {
@@ -782,13 +819,25 @@ body {
   font-size: 11px; color: var(--text-3); font-family: var(--font-mono);
 }
 
-.exp-cat-cell { display: flex; align-items: center; }
+.exp-cat-cell { display: flex; align-items: center; gap: 6px; min-width: 0; }
 
 .exp-cat-pill {
   display: inline-flex; align-items: center;
   font-size: 10px; font-weight: 600;
   padding: 2px 8px; border-radius: 10px;
   border: 1.5px solid transparent;
+  white-space: nowrap; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.exp-cat-empty {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.essential-badge {
+  display: inline-flex; align-items: center;
+  font-size: 10px; font-weight: 700;
+  padding: 2px 7px; border-radius: 10px;
+  background: #fff6d7; color: #8a5a00; border: 1px solid #f3d27a;
   white-space: nowrap;
 }
 
@@ -883,7 +932,8 @@ body {
 }
 
 .exp-toggle-row {
-  display: flex; align-items: center; gap: 24px;
+  display: flex; align-items: center; gap: 12px;
+  flex-wrap: wrap;
   padding: 4px 0;
 }
 
@@ -895,6 +945,30 @@ body {
 .toggle-label input[type="checkbox"] {
   width: 15px; height: 15px; accent-color: var(--accent);
   cursor: pointer; flex-shrink: 0;
+}
+.toggle-label input[type="checkbox"].switch-input {
+  appearance: none;
+  width: 34px; height: 20px;
+  border-radius: 999px;
+  background: #d8deea;
+  position: relative;
+  transition: background .15s;
+}
+.toggle-label input[type="checkbox"].switch-input::before {
+  content: "";
+  position: absolute;
+  width: 16px; height: 16px;
+  top: 2px; left: 2px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0,0,0,.18);
+  transition: transform .15s;
+}
+.toggle-label input[type="checkbox"].switch-input:checked {
+  background: var(--accent);
+}
+.toggle-label input[type="checkbox"].switch-input:checked::before {
+  transform: translateX(14px);
 }
 
 #exp-modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
@@ -1348,6 +1422,9 @@ body {
   .dashboard-mid {
     grid-template-columns: 1fr;
   }
+  #page-expenses .summary-strip {
+    grid-template-columns: 1fr;
+  }
   .summary-card {
     padding: 14px;
   }
@@ -1372,12 +1449,16 @@ body {
   }
   .expense-row,
   #expense-list-header {
-    grid-template-columns: 26px minmax(108px, 1fr) 82px 72px 42px;
+    grid-template-columns: 30px minmax(108px, 1fr) 84px 84px 42px;
+    column-gap: 8px;
     padding: 12px 10px;
   }
   .expense-row .exp-cat-cell,
-  #expense-list-header .exp-col-label:nth-of-type(5) {
+  #expense-list-header .exp-sort-btn[data-sort="category"] {
     display: none;
+  }
+  #expense-list-header .exp-sort-btn {
+    font-size: 9px;
   }
   .history-row,
   #expense-history-header {
@@ -1630,6 +1711,11 @@ body {
               <span class="summary-sub" id="exp-dd-value">0 direct debits</span>
             </div>
             <div class="summary-card">
+              <span class="summary-label">Left to pay</span>
+              <span class="summary-value" id="exp-remaining-value">€0.00</span>
+              <span class="summary-sub">This month</span>
+            </div>
+            <div class="summary-card">
               <span class="summary-label">Overdue</span>
               <span class="summary-value" id="exp-overdue-value">0</span>
             </div>
@@ -1645,11 +1731,11 @@ body {
 
             <!-- Upcoming column header -->
             <div id="expense-list-header" class="hidden">
-              <span></span>
-              <span class="exp-col-label">Name</span>
-              <span class="exp-col-label">Next payment</span>
-              <span class="exp-col-label right">Amount</span>
-              <span class="exp-col-label">Category</span>
+              <button class="exp-sort-btn exp-sort-icon" data-sort="essential" title="Sort by essential">★<span class="exp-sort-arrow"></span></button>
+              <button class="exp-sort-btn" data-sort="name">Name<span class="exp-sort-arrow"></span></button>
+              <button class="exp-sort-btn" data-sort="nextDate">Next payment<span class="exp-sort-arrow"></span></button>
+              <button class="exp-sort-btn right" data-sort="amount">Amount<span class="exp-sort-arrow"></span></button>
+              <button class="exp-sort-btn" data-sort="category">Category<span class="exp-sort-arrow"></span></button>
               <span></span>
             </div>
 
@@ -2018,18 +2104,32 @@ body {
             </div>
           </div>
 
+          <div class="exp-field-row">
+            <label for="exp-new-category">New category</label>
+            <input type="text" id="exp-new-category" placeholder="Type a new category name if needed" autocomplete="off" maxlength="40" />
+          </div>
+
+          <div class="exp-field-row">
+            <label for="exp-recur-months">Repeat every</label>
+            <input type="number" id="exp-recur-months" min="1" step="1" value="1" />
+          </div>
+
           <div class="exp-toggle-row">
             <label class="toggle-label">
-              <input type="checkbox" id="exp-is-recurring" />
-              <span>Recurring monthly</span>
+              <input type="checkbox" id="exp-is-recurring" class="switch-input" />
+              <span>Recurring</span>
             </label>
             <label class="toggle-label">
-              <input type="checkbox" id="exp-is-dd" />
+              <input type="checkbox" id="exp-is-dd" class="switch-input" />
               <span>Direct debit</span>
             </label>
             <label class="toggle-label" id="exp-paid-row">
-              <input type="checkbox" id="exp-is-paid" />
-              <span>Already paid</span>
+              <input type="checkbox" id="exp-is-paid" class="switch-input" />
+              <span>Paid</span>
+            </label>
+            <label class="toggle-label">
+              <input type="checkbox" id="exp-is-essential" class="switch-input" />
+              <span>Essential</span>
             </label>
           </div>
 
